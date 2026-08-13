@@ -22,3 +22,15 @@ class FakeIssueQueue:
 
     def set_label(self, label: str) -> None:
         self.label = label
+
+
+class FakeAgentRunner:
+    """Stands in for the Claude Agent SDK: applies a canned edit to the worktree, returns a pr_body."""
+
+    def __init__(self, edit, pr_body: str = "done"):
+        self._edit = edit           # edit(workdir: str) -> None — writes/changes files in the worktree
+        self._pr_body = pr_body
+
+    def run(self, sandbox, issue: int) -> str:
+        self._edit(sandbox.workdir)
+        return self._pr_body
