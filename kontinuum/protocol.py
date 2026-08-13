@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from kontinuum.claim import Kind, plan_claim, won_claim
+from kontinuum.claim import Kind, max_epoch, plan_claim, resolve_owner, won_claim
 
 
 def attempt_claim(queue, me: str, now: datetime, lease: timedelta) -> bool:
@@ -28,3 +28,17 @@ def attempt_claim(queue, me: str, now: datetime, lease: timedelta) -> bool:
 def heartbeat(queue, me: str, epoch: int, now: datetime, lease: timedelta) -> None:
     """Extend our lease at the same epoch. The owner calls this every ~LEASE/3."""
     queue.append(Kind.HEARTBEAT, me, epoch, now + lease)
+
+
+def assert_owner(queue, me: str, now: datetime) -> bool:
+    """Guard called before every state transition and effect (§7). False ⇒ abort."""
+    return resolve_owner(queue.read_claim_log(), now) == me
+
+
+def release_if_mine(queue, me: str, now: datetime) -> bool:
+    """Give up ownership if we still hold it (e.g. a human added `hold`). No-op otherwise."""
+    log = queue.read_claim_log()
+    if resolve_owner(log, now) != me:
+        return False
+    queue.append(Kind.RELEASE, me, max_epoch(log), now)   # release ignores lease_until
+    return True

@@ -36,6 +36,38 @@ def parse_marker(comment_id: int, body: str) -> ClaimEntry | None:
         return None
 
 
+def gh(*args: str) -> str:
+    """Run `gh` and return stdout. Writes here are the privileged half — the Effect Broker (step 3)."""
+    return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
+
+
+LABEL_COLORS = {"ready": "0e8a16", "claimed": "fbca04", "pr-open": "1d76db", "blocked": "b60205",
+                "needs-triage": "d4c5f9", "hold": "e99695", "paused": "cccccc"}
+
+
+def init_labels(repo: str) -> None:
+    """Create the kontinuum:* labels so set_label never fails on a fresh repo. Idempotent."""
+    for name, color in LABEL_COLORS.items():
+        subprocess.run(["gh", "label", "create", f"kontinuum:{name}", "--repo", repo, "--color", color],
+                       capture_output=True, text=True)   # already-exists is fine, ignore
+
+
+def parse_claim_log(comments: list[dict], bot_login: str) -> list[ClaimEntry]:
+    """Turn raw issue comments into claim entries, trusting ONLY the bot's own comments.
+
+    This is the anti-spoof boundary: a human posting a `<!-- kontinuum-claim -->` marker is
+    ignored, so nobody can forge ownership by commenting.
+    """
+    entries = []
+    for c in comments:
+        if c["user"]["login"] != bot_login:
+            continue
+        entry = parse_marker(c["id"], c["body"])
+        if entry is not None:
+            entries.append(entry)
+    return entries
+
+
 class GitHubIssueQueue:
     """One issue's claim log, backed by `gh`. Duck-types the same 3 methods as the fake."""
 
@@ -47,25 +79,13 @@ class GitHubIssueQueue:
     def read_claim_log(self) -> list[ClaimEntry]:
         # --jq '.[]' flattens all pages into one JSON object per line.
         # ponytail: reads the whole log; heartbeats grow it. Compact/retain via the Janitor later.
-        out = self._gh("api", f"repos/{self.repo}/issues/{self.number}/comments", "--paginate", "--jq", ".[]")
-        entries = []
-        for line in out.splitlines():
-            if not line.strip():
-                continue
-            c = json.loads(line)
-            if c["user"]["login"] != self.bot_login:
-                continue
-            entry = parse_marker(c["id"], c["body"])
-            if entry is not None:
-                entries.append(entry)
-        return entries
+        out = gh("api", f"repos/{self.repo}/issues/{self.number}/comments", "--paginate", "--jq", ".[]")
+        comments = [json.loads(line) for line in out.splitlines() if line.strip()]
+        return parse_claim_log(comments, self.bot_login)
 
     def append(self, kind: Kind, owner: str, epoch: int, lease_until: datetime) -> None:
         body = format_marker(kind, owner, epoch, lease_until)
-        self._gh("api", f"repos/{self.repo}/issues/{self.number}/comments", "-f", f"body={body}")
+        gh("api", f"repos/{self.repo}/issues/{self.number}/comments", "-f", f"body={body}")
 
     def set_label(self, label: str) -> None:
-        self._gh("issue", "edit", str(self.number), "--repo", self.repo, "--add-label", f"kontinuum:{label}")
-
-    def _gh(self, *args: str) -> str:
-        return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
+        gh("issue", "edit", str(self.number), "--repo", self.repo, "--add-label", f"kontinuum:{label}")

@@ -1,33 +1,15 @@
-"""End-to-end claim protocol against a fake queue: claim, skip, reclaim, heartbeat."""
+"""End-to-end claim protocol against the fake queue: claim, skip, reclaim, heartbeat, guards."""
 
 from __future__ import annotations
 
-import itertools
 from datetime import datetime, timedelta
 
-from kontinuum.claim import ClaimEntry, Kind, resolve_owner
-from kontinuum.protocol import attempt_claim, heartbeat
+from kontinuum.claim import Kind, resolve_owner
+from kontinuum.protocol import assert_owner, attempt_claim, heartbeat, release_if_mine
+from tests.fakes import FakeIssueQueue
 
 NOW = datetime(2026, 8, 13, 12, 0, 0)
 LEASE = timedelta(hours=1)
-
-
-class FakeIssueQueue:
-    """In-memory stand-in for the GitHub claim log. The real adapter duck-types these."""
-
-    def __init__(self):
-        self._log: list[ClaimEntry] = []
-        self._ids = itertools.count()
-        self.label: str | None = None
-
-    def read_claim_log(self) -> list[ClaimEntry]:
-        return list(self._log)                             # snapshot, like a GET
-
-    def append(self, kind: Kind, owner: str, epoch: int, lease_until: datetime) -> None:
-        self._log.append(ClaimEntry(next(self._ids), kind, owner, epoch, lease_until))  # server assigns id
-
-    def set_label(self, label: str) -> None:
-        self.label = label
 
 
 def test_first_instance_claims_and_labels():
@@ -59,3 +41,20 @@ def test_heartbeat_keeps_ownership_past_original_lease():
     mid = NOW + timedelta(minutes=40)
     heartbeat(q, "i0", epoch=1, now=mid, lease=LEASE)      # extend to mid+1h before expiry
     assert resolve_owner(q.read_claim_log(), NOW + timedelta(minutes=90)) == "i0"
+
+
+def test_assert_owner_reflects_the_log():
+    q = FakeIssueQueue()
+    assert assert_owner(q, "i0", NOW) is False             # nobody owns it
+    attempt_claim(q, "i0", NOW, LEASE)
+    assert assert_owner(q, "i0", NOW) is True
+    assert assert_owner(q, "i1", NOW) is False             # not the owner
+
+
+def test_release_if_mine_frees_only_my_claim():
+    q = FakeIssueQueue()
+    attempt_claim(q, "i0", NOW, LEASE)
+    assert release_if_mine(q, "i1", NOW) is False          # not mine → no-op
+    assert resolve_owner(q.read_claim_log(), NOW) == "i0"
+    assert release_if_mine(q, "i0", NOW) is True           # mine → released
+    assert resolve_owner(q.read_claim_log(), NOW) is None
