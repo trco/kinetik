@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="420" viewBox="0 0 1000 420" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" markerWidth="12" markerHeight="12" refX="7" refY="4" orient="auto">
+      <path d="M0,0 L8,4 L0,8 Z" fill="#5f6368"/>
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1000" height="420" fill="#ffffff"/>
+
+  <text x="40" y="52" font-size="26" font-weight="700" fill="#202124">Kontinuum — the big picture</text>
+  <text x="40" y="80" font-size="15" fill="#5f6368">A robot teammate that turns a GitHub issue into a pull request for you to merge.</text>
+
+  <!-- 1 -->
+  <rect x="40" y="130" width="200" height="150" rx="14" fill="#e6f4ea" stroke="#34a853" stroke-width="2"/>
+  <text x="140" y="175" font-size="40" text-anchor="middle">🎯</text>
+  <text x="140" y="212" font-size="17" font-weight="700" fill="#202124" text-anchor="middle">Grab an issue</text>
+  <text x="140" y="236" font-size="13" fill="#5f6368" text-anchor="middle">claim one safely —</text>
+  <text x="140" y="253" font-size="13" fill="#5f6368" text-anchor="middle">no two workers collide</text>
+  <text x="140" y="273" font-size="12" font-weight="700" fill="#34a853" text-anchor="middle">✔ WORKS</text>
+
+  <!-- 2 -->
+  <rect x="280" y="130" width="200" height="150" rx="14" fill="#fef7e0" stroke="#f9ab00" stroke-width="2"/>
+  <text x="380" y="175" font-size="40" text-anchor="middle">🛠️</text>
+  <text x="380" y="212" font-size="17" font-weight="700" fill="#202124" text-anchor="middle">Do the work</text>
+  <text x="380" y="236" font-size="13" fill="#5f6368" text-anchor="middle">build &amp; test the change</text>
+  <text x="380" y="253" font-size="13" fill="#5f6368" text-anchor="middle">in a locked-down box</text>
+  <text x="380" y="273" font-size="12" font-weight="700" fill="#b06000" text-anchor="middle">◑ BUILT (not wired)</text>
+
+  <!-- 3 -->
+  <rect x="520" y="130" width="200" height="150" rx="14" fill="#f1f3f4" stroke="#9aa0a6" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="620" y="175" font-size="40" text-anchor="middle">📤</text>
+  <text x="620" y="212" font-size="17" font-weight="700" fill="#3c4043" text-anchor="middle">Open a PR</text>
+  <text x="620" y="236" font-size="13" fill="#5f6368" text-anchor="middle">push the code &amp;</text>
+  <text x="620" y="253" font-size="13" fill="#5f6368" text-anchor="middle">open a pull request</text>
+  <text x="620" y="273" font-size="12" font-weight="700" fill="#9aa0a6" text-anchor="middle">○ TODO</text>
+
+  <!-- 4 -->
+  <rect x="760" y="130" width="200" height="150" rx="14" fill="#ffffff" stroke="#34a853" stroke-width="2"/>
+  <text x="860" y="175" font-size="40" text-anchor="middle">👤</text>
+  <text x="860" y="212" font-size="17" font-weight="700" fill="#202124" text-anchor="middle">You merge</text>
+  <text x="860" y="236" font-size="13" fill="#5f6368" text-anchor="middle">review &amp; click merge —</text>
+  <text x="860" y="253" font-size="13" fill="#5f6368" text-anchor="middle">it never merges itself</text>
+  <text x="860" y="273" font-size="12" font-weight="700" fill="#34a853" text-anchor="middle">the human gate</text>
+
+  <!-- arrows -->
+  <g stroke="#5f6368" stroke-width="2.5" marker-end="url(#a)">
+    <line x1="242" y1="205" x2="276" y2="205"/>
+    <line x1="482" y1="205" x2="516" y2="205"/>
+    <line x1="722" y1="205" x2="756" y2="205"/>
+  </g>
+
+  <text x="40" y="360" font-size="13.5" fill="#5f6368">Runs 24/7 on its own. Today it already does step 1; steps 2–3 are the work left to connect.</text>
+</svg>

@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="1320" viewBox="0 0 1040 1320" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#5f6368"/>
+    </marker>
+    <marker id="arrowDash" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#9aa0a6"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1040" height="1320" fill="#ffffff"/>
+  <text x="30" y="42" font-size="24" font-weight="700" fill="#202124">Kontinuum — code flow (entry → current end)</text>
+  <text x="30" y="68" font-size="14" fill="#5f6368">Following one GitHub issue through the code.</text>
+
+  <!-- legend -->
+  <g font-size="13" fill="#3c4043">
+    <rect x="700" y="26" width="16" height="16" rx="3" fill="#e6f4ea" stroke="#34a853"/>
+    <text x="722" y="39">wired &amp; running</text>
+    <rect x="700" y="48" width="16" height="16" rx="3" fill="#fef7e0" stroke="#f9ab00" stroke-dasharray="4 3"/>
+    <text x="722" y="61">built, not yet connected</text>
+    <rect x="860" y="26" width="16" height="16" rx="3" fill="#f1f3f4" stroke="#9aa0a6" stroke-dasharray="2 3"/>
+    <text x="882" y="39">not built yet</text>
+    <rect x="860" y="48" width="16" height="16" rx="3" fill="#fce8e6" stroke="#d93025"/>
+    <text x="882" y="61">you are here</text>
+  </g>
+
+  <!-- ============ WIRED PATH (green) ============ -->
+  <!-- 1 -->
+  <rect x="120" y="95" width="380" height="58" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="138" y="120" font-size="15" font-weight="700" fill="#202124">1 · python -m kontinuum run</text>
+  <text x="138" y="140" font-size="12.5" fill="#5f6368">__main__.py  →  calls main()</text>
+
+  <!-- 2 -->
+  <rect x="120" y="181" width="380" height="58" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="138" y="206" font-size="15" font-weight="700" fill="#202124">2 · main()  — the forever loop</text>
+  <text x="138" y="226" font-size="12.5" fill="#5f6368">loop.py · every N sec: poll → print → sleep → repeat</text>
+
+  <!-- 3 -->
+  <rect x="120" y="267" width="380" height="58" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="138" y="292" font-size="15" font-weight="700" fill="#202124">3 · run_once()  → poll_ready()</text>
+  <text x="138" y="312" font-size="12.5" fill="#5f6368">gh issue list --label kontinuum:ready  →  [numbers]</text>
+
+  <!-- 4 -->
+  <rect x="120" y="353" width="380" height="58" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="138" y="378" font-size="15" font-weight="700" fill="#202124">4 · handle_issue()</text>
+  <text x="138" y="398" font-size="12.5" fill="#5f6368">hold? → release &amp; skip   ·   else → try to claim</text>
+
+  <!-- 5 -->
+  <rect x="120" y="439" width="380" height="96" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="138" y="464" font-size="15" font-weight="700" fill="#202124">5 · attempt_claim()   (single-owner)</text>
+  <text x="138" y="484" font-size="12.5" fill="#5f6368">protocol.py · read → decide → write → re-read</text>
+  <text x="138" y="503" font-size="12.5" fill="#5f6368">post claim comment; re-read; first-id wins,</text>
+  <text x="138" y="521" font-size="12.5" fill="#5f6368">loser releases. Win → set kontinuum:claimed.</text>
+
+  <!-- side: claim.py -->
+  <rect x="560" y="439" width="360" height="44" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.2"/>
+  <text x="576" y="461" font-size="13" font-weight="700" fill="#202124">claim.py · resolve_owner()</text>
+  <text x="576" y="477" font-size="12" fill="#5f6368">the brain: log → the one owner (pure)</text>
+
+  <!-- side: github.py -->
+  <rect x="560" y="491" width="360" height="44" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.2"/>
+  <text x="576" y="513" font-size="13" font-weight="700" fill="#202124">github.py · GitHubIssueQueue</text>
+  <text x="576" y="529" font-size="12" fill="#5f6368">issue comments = claim log (bot-only)</text>
+
+  <line x1="500" y1="475" x2="558" y2="461" stroke="#5f6368" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+  <line x1="500" y1="500" x2="558" y2="513" stroke="#5f6368" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#arrow)"/>
+
+  <!-- 6 YOU ARE HERE -->
+  <rect x="120" y="563" width="380" height="66" rx="8" fill="#fce8e6" stroke="#d93025" stroke-width="2"/>
+  <text x="138" y="588" font-size="15" font-weight="700" fill="#202124">6 · execute()  — STUB  🛑</text>
+  <text x="138" y="608" font-size="12.5" fill="#5f6368">prints “would run pipeline”. Running path</text>
+  <text x="138" y="624" font-size="12.5" fill="#5f6368">ends here — claims safely, does no work yet.</text>
+
+  <!-- arrows 1..6 -->
+  <g stroke="#5f6368" stroke-width="1.6" marker-end="url(#arrow)">
+    <line x1="310" y1="153" x2="310" y2="179"/>
+    <line x1="310" y1="239" x2="310" y2="265"/>
+    <line x1="310" y1="325" x2="310" y2="351"/>
+    <line x1="310" y1="411" x2="310" y2="437"/>
+    <line x1="310" y1="535" x2="310" y2="561"/>
+  </g>
+
+  <!-- divider: built not wired -->
+  <line x1="30" y1="672" x2="1010" y2="672" stroke="#dadce0" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="30" y="694" font-size="14" font-weight="700" fill="#b06000">BUILT &amp; TESTED — but execute() doesn’t call it yet</text>
+
+  <!-- dashed link from execute to pipeline -->
+  <line x1="310" y1="629" x2="310" y2="716" stroke="#9aa0a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrowDash)"/>
+  <text x="322" y="662" font-size="11.5" fill="#9aa0a6" font-style="italic">(to be wired)</text>
+
+  <!-- 7 Sandbox -->
+  <rect x="120" y="718" width="380" height="66" rx="8" fill="#fef7e0" stroke="#f9ab00" stroke-width="1.6" stroke-dasharray="5 3"/>
+  <text x="138" y="743" font-size="15" font-weight="700" fill="#202124">7 · Sandbox   (isolation)</text>
+  <text x="138" y="763" font-size="12.5" fill="#5f6368">sandbox.py · locked-down container: no secrets,</text>
+  <text x="138" y="779" font-size="12.5" fill="#5f6368">no network, only the code folder visible.</text>
+
+  <!-- 8 propose -->
+  <rect x="120" y="806" width="380" height="140" rx="8" fill="#fef7e0" stroke="#f9ab00" stroke-width="1.6" stroke-dasharray="5 3"/>
+  <text x="138" y="831" font-size="15" font-weight="700" fill="#202124">8 · propose()   — work loop (≤3 tries)</text>
+  <text x="138" y="853" font-size="12.5" fill="#5f6368">pipeline.py</text>
+  <text x="138" y="875" font-size="12.5" fill="#3c4043">a) agent.run() edits the code</text>
+  <text x="138" y="894" font-size="11.5" fill="#9aa0a6">   FakeAgentRunner now · real Claude SDK plugs here</text>
+  <text x="138" y="915" font-size="12.5" fill="#3c4043">b) run_gate() — build/test inside sandbox (verify.py)</text>
+  <text x="138" y="934" font-size="12.5" fill="#3c4043">c) pass → Proposal(diff + PR text) · fail → retry/BLOCK</text>
+
+  <line x1="310" y1="784" x2="310" y2="804" stroke="#9aa0a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrowDash)"/>
+
+  <!-- end of built: Proposal chip -->
+  <rect x="150" y="968" width="320" height="40" rx="20" fill="#fff" stroke="#f9ab00" stroke-width="1.6"/>
+  <text x="310" y="993" font-size="13.5" font-weight="700" fill="#b06000" text-anchor="middle">◗ current end: a Proposal in memory</text>
+  <line x1="310" y1="946" x2="310" y2="966" stroke="#9aa0a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrowDash)"/>
+
+  <!-- divider not built -->
+  <line x1="30" y1="1042" x2="1010" y2="1042" stroke="#dadce0" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="30" y="1064" font-size="14" font-weight="700" fill="#5f6368">NOT BUILT YET — closes the loop</text>
+
+  <!-- 9 effect broker -->
+  <rect x="120" y="1082" width="380" height="66" rx="8" fill="#f1f3f4" stroke="#9aa0a6" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <text x="138" y="1107" font-size="15" font-weight="700" fill="#3c4043">9 · Effect Broker</text>
+  <text x="138" y="1127" font-size="12.5" fill="#5f6368">the only thing with credentials: git push +</text>
+  <text x="138" y="1143" font-size="12.5" fill="#5f6368">open PR + comment issue + set pr-open label.</text>
+
+  <!-- 10 rest -->
+  <rect x="120" y="1170" width="380" height="66" rx="8" fill="#f1f3f4" stroke="#9aa0a6" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <text x="138" y="1195" font-size="15" font-weight="700" fill="#3c4043">10 · Reviewer · real agent · CI status</text>
+  <text x="138" y="1215" font-size="12.5" fill="#5f6368">independent review, Claude SDK, wait for green</text>
+  <text x="138" y="1231" font-size="12.5" fill="#5f6368">CI → DONE_PENDING_MERGE (human merges).</text>
+
+  <line x1="310" y1="1008" x2="310" y2="1080" stroke="#9aa0a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrowDash)"/>
+  <line x1="310" y1="1148" x2="310" y2="1168" stroke="#9aa0a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrowDash)"/>
+
+  <!-- human at the end -->
+  <rect x="560" y="1170" width="360" height="66" rx="8" fill="#fff" stroke="#34a853" stroke-width="1.5"/>
+  <text x="576" y="1195" font-size="15" font-weight="700" fill="#202124">👤 Human</text>
+  <text x="576" y="1215" font-size="12.5" fill="#5f6368">reviews the PR and merges. Kontinuum</text>
+  <text x="576" y="1231" font-size="12.5" fill="#5f6368">never merges or deploys on its own.</text>
+  <line x1="500" y1="1203" x2="558" y2="1203" stroke="#9aa0a6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrowDash)"/>
+</svg>
