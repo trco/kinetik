@@ -1,0 +1,10 @@
+[project]
+name = "kontinuum"
+version = "0.0.0"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = ["pytest", "hypothesis"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
