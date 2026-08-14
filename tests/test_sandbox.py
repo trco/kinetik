@@ -34,3 +34,11 @@ def test_egress_is_blocked(tmp_path):
 def test_workdir_is_the_writable_surface(tmp_path):
     Sandbox(IMAGE, str(tmp_path)).run("sh", "-c", "echo hello > /work/out.txt")
     assert (tmp_path / "out.txt").read_text().strip() == "hello"   # container edits land in the worktree
+
+
+def test_persistent_box_keeps_state_and_blocks_egress(tmp_path):
+    with Sandbox(IMAGE, str(tmp_path)) as box:
+        assert box.exec("sh", "-c", "echo hi").stdout.strip() == "hi"
+        box.exec("sh", "-c", "echo data > /tmp/state.txt")
+        assert box.exec("sh", "-c", "cat /tmp/state.txt").stdout.strip() == "data"   # state survives between execs
+        assert box.exec("wget", "-T", "3", "-q", "-O", "-", "http://example.com").returncode != 0  # no egress
