@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from kontinuum.claim import Kind, resolve_owner
-from kontinuum.loop import HOLD_LABEL, handle_issue
+from kontinuum.loop import HOLD_LABEL, _ready_args, handle_issue
 from tests.fakes import FakeIssueQueue
 
 NOW = datetime(2026, 8, 13, 12, 0, 0)
@@ -48,3 +48,12 @@ def test_hold_prevents_a_fresh_claim():
     assert handle_issue(q, "i0", NOW, LEASE, [HOLD_LABEL], execute) == "hold"
     assert resolve_owner(q.read_claim_log(), NOW) is None  # never claimed
     assert calls == []
+
+
+def test_shared_queue_has_no_assignee_filter():
+    assert "--assignee" not in _ready_args("owner/repo", None)
+
+
+def test_personal_queue_filters_by_assignee():
+    args = _ready_args("owner/repo", "uros")
+    assert args[args.index("--assignee") + 1] == "uros"
