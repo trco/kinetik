@@ -56,3 +56,12 @@ def test_blocked_after_retries_when_gate_always_fails(tmp_path):
     assert prop is None
     assert len(calls) == 3                                 # tried the cap, then gave up
     assert not (Path(repo) / "feature.txt").exists()       # failed attempt cleaned up, worktree left clean
+
+
+def test_secret_in_diff_is_blocked_even_when_gate_passes(tmp_path):
+    repo = str(tmp_path)
+    _init_repo(repo)
+    agent = FakeAgentRunner(lambda wd: (Path(wd) / "conf.py").write_text('AWS_KEY = "AKIA1234567890ABCDEF"\n'))
+    prop = propose(Sandbox(IMAGE, repo), issue=1, gate_cmd="true", agent=agent, max_attempts=1)
+    assert prop is None                                    # gate green, but the secret scan blocks it
+    assert not (Path(repo) / "conf.py").exists()           # rejected diff cleaned up

@@ -10,6 +10,7 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass
 
+from kontinuum.effects import scan_diff
 from kontinuum.verify import run_gate
 
 
@@ -30,7 +31,10 @@ def propose(sandbox, issue: int, gate_cmd: str, agent, max_attempts: int = 3) ->
         pr_body = agent.run(sandbox, issue)              # edits the worktree at sandbox.workdir
         if run_gate(sandbox, gate_cmd).passed:
             _git(sandbox.workdir, "add", "-A")
-            return Proposal(_git(sandbox.workdir, "diff", "--cached"), pr_body, attempt)
+            diff = _git(sandbox.workdir, "diff", "--cached")
+            if not scan_diff(diff):                      # gate green AND no secret in the diff
+                return Proposal(diff, pr_body, attempt)
+            # gate passed but the diff introduces a secret -> reject like a failed attempt
         _git(sandbox.workdir, "reset", "--hard")         # discard the failed attempt, try fresh
         _git(sandbox.workdir, "clean", "-fd")
     # ponytail: bare retry cap. Accumulated feedback + oscillation guard (§10) matter only once a
