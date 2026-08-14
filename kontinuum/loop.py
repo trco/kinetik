@@ -90,7 +90,8 @@ def make_executor(agent, reviewer=None):
             recipe = load_recipe(workdir)                # per-repo gate command + image
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
-            proposal = propose(Sandbox(recipe.image, workdir), task, recipe.gate, agent, reviewer)
+            sandbox = Sandbox(recipe.image, workdir, recipe.network)
+            proposal = propose(sandbox, task, recipe.gate, agent, reviewer)
             if proposal is None:
                 queue.set_label("blocked")
                 return None

@@ -17,6 +17,12 @@ def _repo(tmp_path, verify_yaml: str) -> str:
 def test_loads_recipe(tmp_path):
     r = load_recipe(_repo(tmp_path, "image: python:3.11\ngate: pytest -q\n"))
     assert (r.image, r.gate) == ("python:3.11", "pytest -q")
+    assert r.network == "none"                            # isolated by default
+
+
+def test_network_can_be_opted_in(tmp_path):
+    r = load_recipe(_repo(tmp_path, "image: alpine\ngate: 'true'\nnetwork: bridge\n"))
+    assert r.network == "bridge"
 
 
 def test_missing_required_fails_fast(tmp_path):
