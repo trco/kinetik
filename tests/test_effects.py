@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kontinuum.effects import scan_diff
+from kontinuum.effects import pr_body_text, scan_diff
 
 
 def test_clean_diff_has_no_violations():
@@ -27,3 +27,8 @@ def test_removed_secret_is_not_flagged():
 
 def test_file_header_line_is_not_flagged():
     assert scan_diff("+++ b/secret_token.py\n") == []       # the +++ header is a filename, not content
+
+
+def test_pr_body_links_the_issue():
+    body = pr_body_text(7, "did the thing")
+    assert "Closes #7" in body and "did the thing" in body   # Closes #N auto-closes the issue on merge

@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import re
 
+from kontinuum.github import gh
+from kontinuum.gitcmd import git
+
 SECRET_PATTERNS = [
     ("AWS access key", re.compile(r"AKIA[0-9A-Z]{16}")),
     ("private key", re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----")),
@@ -29,3 +32,22 @@ def scan_diff(diff: str) -> list[str]:
                 violations.append(f"{name} in added line")
                 break
     return violations
+
+
+def pr_body_text(issue: int, summary: str) -> str:
+    """`Closes #N` is what makes GitHub auto-close the issue when the PR merges."""
+    return f"Closes #{issue}\n\n{summary}"
+
+
+def open_pr(workdir: str, repo: str, issue: int, summary: str, base: str, branch: str | None = None) -> str:
+    """Commit the worktree on a fresh branch, push it, open a PR. Returns the PR URL.
+
+    All the credentialed writes live here — the sandboxed agent never reaches this.
+    """
+    branch = branch or f"kontinuum/issue-{issue}"
+    git(workdir, "checkout", "-b", branch)
+    git(workdir, "add", "-A")
+    git(workdir, "commit", "-m", f"Kontinuum: address #{issue}")
+    git(workdir, "push", "-u", "origin", branch)
+    return gh("pr", "create", "--repo", repo, "--base", base, "--head", branch,
+              "--title", f"Kontinuum: address #{issue}", "--body", pr_body_text(issue, summary)).strip()
