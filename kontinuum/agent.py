@@ -34,7 +34,7 @@ class ClaudeAgentRunner:
         self.python_exe = python_exe    # runs the MCP server (pure stdlib; any python works)
         self.timeout = timeout
 
-    def run(self, sandbox, task: Task) -> str:
+    def run(self, sandbox, task: Task, feedback: str = "") -> str:
         sandbox.start()                 # persistent box; the agent's commands exec into it
         try:
             cfg = {"mcpServers": {"kontinuum-sandbox": {
@@ -43,8 +43,11 @@ class ClaudeAgentRunner:
             cfgpath = os.path.join(tempfile.mkdtemp(), "mcp.json")
             with open(cfgpath, "w") as f:
                 json.dump(cfg, f)
+            prompt = _prompt(task)
+            if feedback:
+                prompt += f"\n\nA previous attempt failed. Fix it based on this:\n{feedback}"
             r = subprocess.run(
-                ["claude", "-p", _prompt(task), "--mcp-config", cfgpath, "--strict-mcp-config",
+                ["claude", "-p", prompt, "--mcp-config", cfgpath, "--strict-mcp-config",
                  "--allowedTools", "Read", "Edit", "Write", "mcp__kontinuum-sandbox__run",
                  "--disallowedTools", "Bash", "--permission-mode", "acceptEdits"],
                 cwd=sandbox.workdir, capture_output=True, text=True, timeout=self.timeout)

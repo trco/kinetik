@@ -74,7 +74,7 @@ def _remove_worktree(cache: str, workdir: str) -> None:
 class DemoAgent:
     """Wiring/demo agent: drops a marker file so the pipeline has a diff. Not real work."""
 
-    def run(self, sandbox, task: Task) -> str:
+    def run(self, sandbox, task: Task, feedback: str = "") -> str:
         with open(os.path.join(sandbox.workdir, "KONTINUUM.md"), "w") as f:
             f.write(f"Kontinuum touched #{task.number}\n")
         return f"Demo change for #{task.number}."

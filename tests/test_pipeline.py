@@ -43,19 +43,21 @@ def test_proposal_returned_when_gate_passes(tmp_path):
     assert prop.attempts == 1
 
 
-def test_blocked_after_retries_when_gate_always_fails(tmp_path):
+def test_blocked_after_max_attempts_when_gate_always_fails(tmp_path):
     repo = str(tmp_path)
     _init_repo(repo)
     calls = []
 
-    def edit(wd):
-        calls.append(1)
-        (Path(wd) / "feature.txt").write_text("x\n")
+    class Agent:
+        def run(self, sandbox, task, feedback=""):
+            calls.append(1)
+            (Path(sandbox.workdir) / "feature.txt").write_text(f"try {len(calls)}\n")  # varies each attempt
+            return "d"
 
-    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="false", agent=FakeAgentRunner(edit), max_attempts=3)
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="false", agent=Agent(), max_attempts=3)
     assert prop is None
-    assert len(calls) == 3                                 # tried the cap, then gave up
-    assert not (Path(repo) / "feature.txt").exists()       # failed attempt cleaned up, worktree left clean
+    assert len(calls) == 3                                 # different diffs -> runs the full cap
+    assert not (Path(repo) / "feature.txt").exists()       # worktree left clean
 
 
 def test_secret_in_diff_is_blocked_even_when_gate_passes(tmp_path):
@@ -65,3 +67,34 @@ def test_secret_in_diff_is_blocked_even_when_gate_passes(tmp_path):
     prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="true", agent=agent, max_attempts=1)
     assert prop is None                                    # gate green, but the secret scan blocks it
     assert not (Path(repo) / "conf.py").exists()           # rejected diff cleaned up
+
+
+def test_agent_gets_feedback_and_fixes_on_retry(tmp_path):
+    repo = str(tmp_path)
+    _init_repo(repo)
+
+    class Agent:
+        def run(self, sandbox, task, feedback=""):
+            (Path(sandbox.workdir) / "marker").write_text("ok" if feedback else "bad")  # fixes once told
+            return "done"
+
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd='test "$(cat marker)" = ok',
+                   agent=Agent(), max_attempts=3)
+    assert prop is not None
+    assert prop.attempts == 2                              # failed once, fixed after feedback
+
+
+def test_blocked_when_diff_stops_changing(tmp_path):
+    repo = str(tmp_path)
+    _init_repo(repo)
+    calls = []
+
+    class Stuck:
+        def run(self, sandbox, task, feedback=""):
+            calls.append(1)
+            (Path(sandbox.workdir) / "x").write_text("same")   # identical diff every time
+            return "d"
+
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="false", agent=Stuck(), max_attempts=5)
+    assert prop is None
+    assert len(calls) == 2                                 # oscillation guard stops after the repeat

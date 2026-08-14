@@ -31,6 +31,6 @@ class FakeAgentRunner:
         self._edit = edit           # edit(workdir: str) -> None — writes/changes files in the worktree
         self._pr_body = pr_body
 
-    def run(self, sandbox, task) -> str:
+    def run(self, sandbox, task, feedback: str = "") -> str:
         self._edit(sandbox.workdir)
         return self._pr_body
