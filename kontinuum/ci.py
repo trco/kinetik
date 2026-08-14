@@ -1,12 +1,11 @@
 """Read a PR's CI result (§9). K gates on CI status — it never runs e2e itself.
 
-A repo with no CI returns 'none' immediately, so the daemon never blocks waiting on nothing.
+A single read per PR, checked each loop pass (non-blocking); the worker never waits on CI.
 """
 
 from __future__ import annotations
 
 import json
-import time
 
 from kontinuum.github import gh
 
@@ -34,20 +33,7 @@ def summarize_checks(checks: list) -> str:
     return "pass"
 
 
-def ci_state(pr: str) -> str:
-    out = gh("pr", "view", pr, "--json", "statusCheckRollup")
+def ci_state(repo: str, ref: str) -> str:
+    """One read of the PR's checks. ref is the branch/number/url of the PR."""
+    out = gh("pr", "view", ref, "--repo", repo, "--json", "statusCheckRollup")
     return summarize_checks(json.loads(out).get("statusCheckRollup") or [])
-
-
-def await_ci(pr: str, timeout: int = 1800, interval: int = 30) -> str:
-    """Poll until CI settles (pass/fail/none) or timeout. No-CI PRs return 'none' at once.
-
-    ponytail: blocks the serial worker while polling. The non-blocking upgrade is a separate
-    PR-maintenance loop that revisits pr-open issues (§12) — add it when throughput needs it.
-    """
-    end = time.time() + timeout
-    while True:
-        state = ci_state(pr)
-        if state != "pending" or time.time() >= end:
-            return state
-        time.sleep(interval)

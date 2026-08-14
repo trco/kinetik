@@ -13,7 +13,7 @@ import tempfile
 from datetime import datetime, timedelta
 
 from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
-from kontinuum.ci import await_ci
+from kontinuum.ci import ci_state
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
@@ -87,20 +87,19 @@ def make_executor(agent, reviewer=None):
         base = _default_branch(queue.repo)
         workdir, cache = _worktree(queue.repo, base)
         try:
-            recipe = load_recipe(workdir)                # per-repo gate command + image
+            recipe = load_recipe(workdir)                # per-repo setup/gate/image
+            if recipe.setup:                             # trusted install WITH network, before the isolated box
+                Sandbox(recipe.image, workdir, "bridge").run("sh", "-c", recipe.setup)
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
-            sandbox = Sandbox(recipe.image, workdir, recipe.network)
+            sandbox = Sandbox(recipe.image, workdir, recipe.network)   # agent + gate: offline by default
             proposal = propose(sandbox, task, recipe.gate, agent, reviewer)
             if proposal is None:
                 queue.set_label("blocked")
                 return None
             url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, base)
             queue.comment(f"Kontinuum opened {url}")
-            queue.set_label("pr-open")
-            if await_ci(url) == "fail":                   # green/none = human merges; red = needs a human
-                queue.set_label("blocked")
-                queue.comment("CI is failing on the PR — needs a human.")
+            queue.set_label("pr-open")                    # CI is checked non-blocking in maintain_prs()
             return url
         finally:
             _remove_worktree(cache, workdir)
@@ -118,6 +117,23 @@ def _ready_args(repo: str, assignee: str | None) -> list[str]:
 def poll_ready(repo: str, assignee: str | None = None) -> list[int]:
     out = gh(*_ready_args(repo, assignee))
     return [int(line) for line in out.splitlines() if line.strip()]
+
+
+def maintain_prs(repo: str, bot_login: str) -> None:
+    """Non-blocking pass: mark any pr-open issue whose PR's CI has gone red as blocked."""
+    out = gh("issue", "list", "--repo", repo, "--label", "kontinuum:pr-open",
+             "--state", "open", "--json", "number", "--jq", ".[].number")
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        n = int(line)
+        try:
+            if ci_state(repo, f"kontinuum/issue-{n}") == "fail":
+                q = GitHubIssueQueue(repo, n, bot_login)
+                q.set_label("blocked")
+                q.comment("CI is failing on the PR — needs a human.")
+        except Exception:
+            continue                                      # lingering label / no PR — skip, don't kill the pass
 
 
 def issue_labels(repo: str, number: int) -> list[str]:
@@ -175,6 +191,7 @@ def main(argv=None):
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
         now = datetime.utcnow()
         for repo in cfg.repos:                             # one K, several repos
+            maintain_prs(repo, cfg.bot_login)              # non-blocking: red CI on open PRs -> blocked
             did = run_once(repo, cfg.instance_id, now, lease, cfg.bot_login, cfg.assignee, executor)
             print(f"[{now:%H:%M:%S}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
         time.sleep(cfg.poll_sec)

@@ -14,10 +14,13 @@ import yaml
 @dataclass
 class Recipe:
     image: str            # sandbox image carrying the repo's toolchain
-    gate: str             # the local gate command (build / lint / test)
-    # 'none' = fully isolated (best). Prefer baking test deps into `image`. If the gate genuinely
-    # must fetch (pip/npm install), a repo can opt into 'bridge' here — less isolation, its choice.
-    # ponytail: the proper fix is an egress allowlist proxy (registries only), not open network.
+    gate: str             # the local gate command (build / lint / test), run OFFLINE
+    # Trusted install step run WITH network BEFORE the agent, into /work (e.g. `npm ci`,
+    # `pip install --target /work/.deps -r requirements.txt`). Deterministic and repo-authored,
+    # so it's safe online — while the untrusted agent + gate then run with no network.
+    setup: str = ""
+    # Network for the agent+gate box. 'none' = fully isolated (best). Prefer `setup` + baking deps
+    # into `image`; only open this to 'bridge' if the agent itself must reach the network.
     network: str = "none"
 
 
@@ -28,4 +31,5 @@ def load_recipe(workdir: str) -> Recipe:
     missing = [k for k in ("image", "gate") if not data.get(k)]
     if missing:
         raise SystemExit(f"kontinuum: {path} missing: {', '.join(missing)}")
-    return Recipe(image=data["image"], gate=data["gate"], network=data.get("network", "none"))
+    return Recipe(image=data["image"], gate=data["gate"],
+                  setup=data.get("setup", ""), network=data.get("network", "none"))

@@ -1,8 +1,11 @@
 """Claude agent runner (§2, option #2): drives the `claude` CLI on the host.
 
 The login stays on the host. File edits go to the worktree (cwd); the agent's *commands* run in the
-sandbox via the `run` tool (host Bash disabled), so a hijacked command is contained. Uses the
-existing Claude Code login — no API key needed.
+sandbox via the `run` tool (host Bash disabled), so a hijacked command is contained.
+
+Auth: on your laptop it uses the existing Claude Code login (no key). On a server/cron with no
+interactive login, set ANTHROPIC_API_KEY in the environment — the CLI picks it up automatically
+(subprocess inherits the env), so nothing else changes.
 """
 
 from __future__ import annotations
