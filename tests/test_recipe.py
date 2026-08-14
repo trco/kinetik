@@ -15,13 +15,8 @@ def _repo(tmp_path, verify_yaml: str) -> str:
 
 
 def test_loads_recipe(tmp_path):
-    r = load_recipe(_repo(tmp_path, "image: python:3.11\ngate: pytest -q\nbase: master\n"))
-    assert (r.image, r.gate, r.base) == ("python:3.11", "pytest -q", "master")
-
-
-def test_base_defaults_to_main(tmp_path):
-    r = load_recipe(_repo(tmp_path, "image: alpine\ngate: 'true'\n"))
-    assert r.base == "main"
+    r = load_recipe(_repo(tmp_path, "image: python:3.11\ngate: pytest -q\n"))
+    assert (r.image, r.gate) == ("python:3.11", "pytest -q")
 
 
 def test_missing_required_fails_fast(tmp_path):

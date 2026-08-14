@@ -3,4 +3,3 @@
 # pytest gate once a deps-baked image + registry egress land (the sandbox has no network yet).
 image: python:3.11-slim
 gate: python -m compileall -q kontinuum
-base: master

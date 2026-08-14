@@ -15,7 +15,6 @@ import yaml
 class Recipe:
     image: str        # sandbox image carrying the repo's toolchain
     gate: str         # the local gate command (build / lint / test)
-    base: str = "main"  # branch to open PRs against
 
 
 def load_recipe(workdir: str) -> Recipe:
@@ -25,4 +24,4 @@ def load_recipe(workdir: str) -> Recipe:
     missing = [k for k in ("image", "gate") if not data.get(k)]
     if missing:
         raise SystemExit(f"kontinuum: {path} missing: {', '.join(missing)}")
-    return Recipe(image=data["image"], gate=data["gate"], base=data.get("base", "main"))
+    return Recipe(image=data["image"], gate=data["gate"])

@@ -15,10 +15,13 @@ from datetime import datetime, timedelta
 from kontinuum.agent import ClaudeAgentRunner
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
+from kontinuum.gitcmd import git
 from kontinuum.pipeline import Task, propose
 from kontinuum.protocol import attempt_claim, release_if_mine
 from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
+
+CACHE_DIR = os.path.expanduser("~/.kontinuum/cache")
 
 HOLD_LABEL = "kontinuum:hold"
 
@@ -40,11 +43,32 @@ def execute(queue) -> None:
     print(f"  claimed {queue.repo}#{queue.number} — would run pipeline")
 
 
-def _clone(repo: str) -> str:
-    root = tempfile.mkdtemp(prefix="kontinuum-")
-    workdir = os.path.join(root, "repo")
-    gh("repo", "clone", repo, workdir, "--", "-q")       # ponytail: full clone per task; cache + worktrees later
-    return workdir
+def _default_branch(repo: str) -> str:
+    return gh("repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name").strip()
+
+
+def _cache(repo: str) -> str:
+    """One local clone per repo, kept up to date — reused across tasks instead of re-cloning."""
+    path = os.path.join(CACHE_DIR, repo.replace("/", "__"))
+    if os.path.isdir(path):
+        git(path, "fetch", "--quiet", "origin")
+    else:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        gh("repo", "clone", repo, path, "--", "-q")
+    return path
+
+
+def _worktree(repo: str, base: str) -> tuple[str, str]:
+    """A fresh, isolated worktree off the latest base — no re-download, never touches your checkout."""
+    cache = _cache(repo)
+    workdir = os.path.join(tempfile.mkdtemp(prefix="kontinuum-wt-"), "wt")
+    git(cache, "worktree", "add", "--quiet", "--force", "--detach", workdir, f"origin/{base}")
+    return workdir, cache
+
+
+def _remove_worktree(cache: str, workdir: str) -> None:
+    git(cache, "worktree", "remove", "--force", workdir)
+    shutil.rmtree(os.path.dirname(workdir), ignore_errors=True)
 
 
 class DemoAgent:
@@ -59,21 +83,22 @@ class DemoAgent:
 def make_executor(agent):
     """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
     def execute(queue):
-        workdir = _clone(queue.repo)
+        base = _default_branch(queue.repo)
+        workdir, cache = _worktree(queue.repo, base)
         try:
-            recipe = load_recipe(workdir)                # per-repo gate command + image + base
+            recipe = load_recipe(workdir)                # per-repo gate command + image
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
             proposal = propose(Sandbox(recipe.image, workdir), task, recipe.gate, agent)
             if proposal is None:
                 queue.set_label("blocked")
                 return None
-            url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, recipe.base)
+            url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, base)
             queue.comment(f"Kontinuum opened {url}")
             queue.set_label("pr-open")
             return url
         finally:
-            shutil.rmtree(os.path.dirname(workdir), ignore_errors=True)
+            _remove_worktree(cache, workdir)
     return execute
 
 
