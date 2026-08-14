@@ -18,6 +18,7 @@ def test_loads_from_yaml(tmp_path):
     assert cfg.instance_id == "k/uros"
     assert cfg.repos == ["a/b", "c/d"]
     assert cfg.assignee is None        # omitted -> shared queue
+    assert cfg.agent is None           # omitted -> stub, no PRs
     assert cfg.lease_min == 60         # default
 
 

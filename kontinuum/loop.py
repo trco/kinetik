@@ -15,6 +15,7 @@ from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.pipeline import propose
 from kontinuum.protocol import attempt_claim, release_if_mine
+from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
 
 HOLD_LABEL = "kontinuum:hold"
@@ -44,16 +45,26 @@ def _clone(repo: str) -> str:
     return workdir
 
 
-def make_executor(base: str, gate_cmd: str, image: str, agent):
-    """Build the real execute(): clone -> sandbox -> propose -> open PR (or mark blocked)."""
+class DemoAgent:
+    """Wiring/demo agent: drops a marker file so the pipeline has a diff. Not real work."""
+
+    def run(self, sandbox, issue: int) -> str:
+        with open(os.path.join(sandbox.workdir, "KONTINUUM.md"), "w") as f:
+            f.write(f"Kontinuum touched #{issue}\n")
+        return f"Demo change for #{issue}."
+
+
+def make_executor(agent):
+    """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
     def execute(queue):
         workdir = _clone(queue.repo)
         try:
-            proposal = propose(Sandbox(image, workdir), queue.number, gate_cmd, agent)
+            recipe = load_recipe(workdir)                # per-repo gate command + image + base
+            proposal = propose(Sandbox(recipe.image, workdir), queue.number, recipe.gate, agent)
             if proposal is None:
                 queue.set_label("blocked")
                 return None
-            url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, base)
+            url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, recipe.base)
             queue.comment(f"Kontinuum opened {url}")
             queue.set_label("pr-open")
             return url
@@ -104,6 +115,7 @@ def main(argv=None):
     r.add_argument("--instance-id")                        # all of these override the config file
     r.add_argument("--bot-login")
     r.add_argument("--assignee")                           # personal queue: only issues assigned to this user
+    r.add_argument("--agent")                              # "demo" runs the pipeline; unset = stub
     r.add_argument("--lease-min", type=int)
     r.add_argument("--poll-sec", type=int)
     il = sub.add_parser("init-labels", help="create the kontinuum:* labels on a repo")
@@ -116,13 +128,15 @@ def main(argv=None):
 
     cfg = load_config(args.config, {
         "instance_id": args.instance_id, "bot_login": args.bot_login, "assignee": args.assignee,
-        "repos": args.repos, "lease_min": args.lease_min, "poll_sec": args.poll_sec,
+        "agent": args.agent, "repos": args.repos, "lease_min": args.lease_min, "poll_sec": args.poll_sec,
     })
+    # ponytail: only the demo agent exists; default stays the stub so a fake brain can't spam PRs.
+    executor = make_executor(DemoAgent()) if cfg.agent == "demo" else execute
     lease = timedelta(minutes=cfg.lease_min)
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
         now = datetime.utcnow()
         for repo in cfg.repos:                             # one K, several repos
-            did = run_once(repo, cfg.instance_id, now, lease, cfg.bot_login, cfg.assignee)
+            did = run_once(repo, cfg.instance_id, now, lease, cfg.bot_login, cfg.assignee, executor)
             print(f"[{now:%H:%M:%S}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
         time.sleep(cfg.poll_sec)
 

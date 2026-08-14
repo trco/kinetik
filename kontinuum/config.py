@@ -20,6 +20,7 @@ class Config:
     bot_login: str
     repos: list[str]
     assignee: str | None = None      # personal queue; omit for the shared queue
+    agent: str | None = None         # which agent drives the pipeline ("demo"); unset = stub (no PRs)
     lease_min: int = 60
     poll_sec: int = 300
 
@@ -44,6 +45,7 @@ def load_config(path: str | None = None, overrides: dict | None = None) -> Confi
         bot_login=data["bot_login"],
         repos=list(data["repos"]),
         assignee=data.get("assignee"),
+        agent=data.get("agent"),
         lease_min=int(data.get("lease_min", 60)),
         poll_sec=int(data.get("poll_sec", 300)),
     )
