@@ -12,7 +12,7 @@ import shutil
 import tempfile
 from datetime import datetime, timedelta
 
-from kontinuum.agent import ClaudeAgentRunner
+from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
@@ -80,7 +80,7 @@ class DemoAgent:
         return f"Demo change for #{task.number}."
 
 
-def make_executor(agent):
+def make_executor(agent, reviewer=None):
     """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
     def execute(queue):
         base = _default_branch(queue.repo)
@@ -89,7 +89,7 @@ def make_executor(agent):
             recipe = load_recipe(workdir)                # per-repo gate command + image
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
-            proposal = propose(Sandbox(recipe.image, workdir), task, recipe.gate, agent)
+            proposal = propose(Sandbox(recipe.image, workdir), task, recipe.gate, agent, reviewer)
             if proposal is None:
                 queue.set_label("blocked")
                 return None
@@ -161,7 +161,7 @@ def main(argv=None):
     })
     # ponytail: default stays the stub so nothing opens PRs until a real agent is chosen.
     if cfg.agent == "claude":
-        executor = make_executor(ClaudeAgentRunner())
+        executor = make_executor(ClaudeAgentRunner(), ClaudeReviewer())
     elif cfg.agent == "demo":
         executor = make_executor(DemoAgent())
     else:

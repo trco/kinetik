@@ -22,13 +22,19 @@ class Task:
 
 
 @dataclass
+class Verdict:
+    approved: bool
+    reason: str = ""
+
+
+@dataclass
 class Proposal:
     diff: str
     pr_body: str
     attempts: int
 
 
-def propose(sandbox, task: Task, gate_cmd: str, agent, max_attempts: int = 3) -> Proposal | None:
+def propose(sandbox, task: Task, gate_cmd: str, agent, reviewer=None, max_attempts: int = 3) -> Proposal | None:
     """Run agent -> gate up to max_attempts, feeding failures back. Clean pass -> Proposal, else None.
 
     The agent gets the previous failure (gate log or secret findings) as `feedback` so it can fix it.
@@ -41,12 +47,18 @@ def propose(sandbox, task: Task, gate_cmd: str, agent, max_attempts: int = 3) ->
         gate = run_gate(sandbox, gate_cmd)
         git(sandbox.workdir, "add", "-A")
         diff = git(sandbox.workdir, "diff", "--cached")
-        if gate.passed and not scan_diff(diff):          # gate green AND no secret in the diff
+        secrets = scan_diff(diff)
+        # only spend a review once the change is green and secret-free
+        verdict = reviewer.review(diff, task) if (reviewer and gate.passed and not secrets) else Verdict(True)
+        if gate.passed and not secrets and verdict.approved:
             return Proposal(diff, pr_body, attempt)
 
-        secrets = scan_diff(diff)
-        feedback = (f"The change adds secrets ({', '.join(secrets)}); remove them." if gate.passed
-                    else f"The gate command failed — fix the code so it passes:\n{gate.log[-1500:]}")
+        if not gate.passed:
+            feedback = f"The gate command failed — fix the code so it passes:\n{gate.log[-1500:]}"
+        elif secrets:
+            feedback = f"The change adds secrets ({', '.join(secrets)}); remove them."
+        else:
+            feedback = f"A reviewer rejected the change: {verdict.reason}"
         stuck = diff == last_diff                        # same diff again -> not converging
         last_diff = diff
         git(sandbox.workdir, "reset", "--hard")          # discard the failed attempt, try fresh

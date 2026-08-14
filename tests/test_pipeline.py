@@ -10,7 +10,7 @@ import pytest
 
 from kontinuum.pipeline import Task, propose
 from kontinuum.sandbox import Sandbox
-from tests.fakes import FakeAgentRunner
+from tests.fakes import FakeAgentRunner, FakeReviewer
 
 IMAGE = "alpine:latest"
 
@@ -82,6 +82,24 @@ def test_agent_gets_feedback_and_fixes_on_retry(tmp_path):
                    agent=Agent(), max_attempts=3)
     assert prop is not None
     assert prop.attempts == 2                              # failed once, fixed after feedback
+
+
+def test_reviewer_rejection_blocks_the_pr(tmp_path):
+    repo = str(tmp_path)
+    _init_repo(repo)
+    agent = FakeAgentRunner(lambda wd: (Path(wd) / "f.txt").write_text("hi"))
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="true", agent=agent,
+                   reviewer=FakeReviewer(approved=False, reason="not right"), max_attempts=2)
+    assert prop is None                                    # gate green, but reviewer rejects
+
+
+def test_reviewer_approval_lets_it_through(tmp_path):
+    repo = str(tmp_path)
+    _init_repo(repo)
+    agent = FakeAgentRunner(lambda wd: (Path(wd) / "f.txt").write_text("hi"))
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="true", agent=agent,
+                   reviewer=FakeReviewer(approved=True), max_attempts=1)
+    assert prop is not None
 
 
 def test_blocked_when_diff_stops_changing(tmp_path):

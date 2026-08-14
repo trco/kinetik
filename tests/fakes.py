@@ -6,6 +6,7 @@ import itertools
 from datetime import datetime
 
 from kontinuum.claim import ClaimEntry, Kind
+from kontinuum.pipeline import Verdict
 
 
 class FakeIssueQueue:
@@ -34,3 +35,11 @@ class FakeAgentRunner:
     def run(self, sandbox, task, feedback: str = "") -> str:
         self._edit(sandbox.workdir)
         return self._pr_body
+
+
+class FakeReviewer:
+    def __init__(self, approved: bool = True, reason: str = ""):
+        self._verdict = Verdict(approved, reason)
+
+    def review(self, diff, task) -> Verdict:
+        return self._verdict

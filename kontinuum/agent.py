@@ -13,9 +13,10 @@ import subprocess
 import sys
 import tempfile
 
-from kontinuum.pipeline import Task
+from kontinuum.pipeline import Task, Verdict
 
 _MCP_SERVER = os.path.join(os.path.dirname(__file__), "sandbox_mcp.py")
+_NO_TOOLS = ["Bash", "Edit", "Write", "Read", "Glob", "Grep"]
 
 
 def _prompt(task: Task) -> str:
@@ -54,3 +55,24 @@ class ClaudeAgentRunner:
             return (r.stdout or "").strip() or f"Implements #{task.number}"
         finally:
             sandbox.stop()
+
+
+class ClaudeReviewer:
+    """Independent, read-only second opinion on the diff. One input, not the trust anchor (§10)."""
+
+    def __init__(self, timeout: int = 600):
+        self.timeout = timeout
+
+    def review(self, diff: str, task: Task) -> Verdict:
+        prompt = (
+            f"Review this diff for issue #{task.number}: {task.title}\n\n{task.body}\n\n"
+            f"DIFF:\n{diff}\n\n"
+            "Does it correctly and safely address the issue? Answer with APPROVE or REJECT on the "
+            "first line, then a one-sentence reason."
+        )
+        r = subprocess.run(
+            ["claude", "-p", prompt, "--disallowedTools", *_NO_TOOLS, "--permission-mode", "acceptEdits"],
+            capture_output=True, text=True, timeout=self.timeout)
+        out = (r.stdout or "").strip()
+        approved = "REJECT" not in out.split("\n", 1)[0].upper()   # default to approve unless it clearly rejects
+        return Verdict(approved, out[:300])
