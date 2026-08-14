@@ -13,6 +13,7 @@ import tempfile
 from datetime import datetime, timedelta
 
 from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
+from kontinuum.ci import await_ci
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
@@ -96,6 +97,9 @@ def make_executor(agent, reviewer=None):
             url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, base)
             queue.comment(f"Kontinuum opened {url}")
             queue.set_label("pr-open")
+            if await_ci(url) == "fail":                   # green/none = human merges; red = needs a human
+                queue.set_label("blocked")
+                queue.comment("CI is failing on the PR — needs a human.")
             return url
         finally:
             _remove_worktree(cache, workdir)
