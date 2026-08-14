@@ -15,16 +15,23 @@ from kontinuum.verify import run_gate
 
 
 @dataclass
+class Task:
+    number: int
+    title: str = ""
+    body: str = ""
+
+
+@dataclass
 class Proposal:
     diff: str
     pr_body: str
     attempts: int
 
 
-def propose(sandbox, issue: int, gate_cmd: str, agent, max_attempts: int = 3) -> Proposal | None:
+def propose(sandbox, task: Task, gate_cmd: str, agent, max_attempts: int = 3) -> Proposal | None:
     """Run agent -> gate up to max_attempts. Staged diff on the first clean pass, else None (BLOCKED)."""
     for attempt in range(1, max_attempts + 1):
-        pr_body = agent.run(sandbox, issue)              # edits the worktree at sandbox.workdir
+        pr_body = agent.run(sandbox, task)               # edits the worktree at sandbox.workdir
         if run_gate(sandbox, gate_cmd).passed:
             git(sandbox.workdir, "add", "-A")
             diff = git(sandbox.workdir, "diff", "--cached")

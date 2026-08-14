@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from kontinuum.pipeline import propose
+from kontinuum.pipeline import Task, propose
 from kontinuum.sandbox import Sandbox
 from tests.fakes import FakeAgentRunner
 
@@ -36,7 +36,7 @@ def test_proposal_returned_when_gate_passes(tmp_path):
     repo = str(tmp_path)
     _init_repo(repo)
     agent = FakeAgentRunner(lambda wd: (Path(wd) / "feature.txt").write_text("hello\n"), pr_body="Implements #1")
-    prop = propose(Sandbox(IMAGE, repo), issue=1, gate_cmd="test -f feature.txt", agent=agent)
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="test -f feature.txt", agent=agent)
     assert prop is not None
     assert "feature.txt" in prop.diff
     assert prop.pr_body == "Implements #1"
@@ -52,7 +52,7 @@ def test_blocked_after_retries_when_gate_always_fails(tmp_path):
         calls.append(1)
         (Path(wd) / "feature.txt").write_text("x\n")
 
-    prop = propose(Sandbox(IMAGE, repo), issue=1, gate_cmd="false", agent=FakeAgentRunner(edit), max_attempts=3)
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="false", agent=FakeAgentRunner(edit), max_attempts=3)
     assert prop is None
     assert len(calls) == 3                                 # tried the cap, then gave up
     assert not (Path(repo) / "feature.txt").exists()       # failed attempt cleaned up, worktree left clean
@@ -62,6 +62,6 @@ def test_secret_in_diff_is_blocked_even_when_gate_passes(tmp_path):
     repo = str(tmp_path)
     _init_repo(repo)
     agent = FakeAgentRunner(lambda wd: (Path(wd) / "conf.py").write_text('AWS_KEY = "AKIA1234567890ABCDEF"\n'))
-    prop = propose(Sandbox(IMAGE, repo), issue=1, gate_cmd="true", agent=agent, max_attempts=1)
+    prop = propose(Sandbox(IMAGE, repo), Task(1), gate_cmd="true", agent=agent, max_attempts=1)
     assert prop is None                                    # gate green, but the secret scan blocks it
     assert not (Path(repo) / "conf.py").exists()           # rejected diff cleaned up

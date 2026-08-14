@@ -6,14 +6,16 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import tempfile
 from datetime import datetime, timedelta
 
+from kontinuum.agent import ClaudeAgentRunner
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
-from kontinuum.pipeline import propose
+from kontinuum.pipeline import Task, propose
 from kontinuum.protocol import attempt_claim, release_if_mine
 from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
@@ -48,10 +50,10 @@ def _clone(repo: str) -> str:
 class DemoAgent:
     """Wiring/demo agent: drops a marker file so the pipeline has a diff. Not real work."""
 
-    def run(self, sandbox, issue: int) -> str:
+    def run(self, sandbox, task: Task) -> str:
         with open(os.path.join(sandbox.workdir, "KONTINUUM.md"), "w") as f:
-            f.write(f"Kontinuum touched #{issue}\n")
-        return f"Demo change for #{issue}."
+            f.write(f"Kontinuum touched #{task.number}\n")
+        return f"Demo change for #{task.number}."
 
 
 def make_executor(agent):
@@ -60,7 +62,9 @@ def make_executor(agent):
         workdir = _clone(queue.repo)
         try:
             recipe = load_recipe(workdir)                # per-repo gate command + image + base
-            proposal = propose(Sandbox(recipe.image, workdir), queue.number, recipe.gate, agent)
+            info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
+            task = Task(queue.number, info.get("title", ""), info.get("body", ""))
+            proposal = propose(Sandbox(recipe.image, workdir), task, recipe.gate, agent)
             if proposal is None:
                 queue.set_label("blocked")
                 return None
@@ -130,8 +134,13 @@ def main(argv=None):
         "instance_id": args.instance_id, "bot_login": args.bot_login, "assignee": args.assignee,
         "agent": args.agent, "repos": args.repos, "lease_min": args.lease_min, "poll_sec": args.poll_sec,
     })
-    # ponytail: only the demo agent exists; default stays the stub so a fake brain can't spam PRs.
-    executor = make_executor(DemoAgent()) if cfg.agent == "demo" else execute
+    # ponytail: default stays the stub so nothing opens PRs until a real agent is chosen.
+    if cfg.agent == "claude":
+        executor = make_executor(ClaudeAgentRunner())
+    elif cfg.agent == "demo":
+        executor = make_executor(DemoAgent())
+    else:
+        executor = execute
     lease = timedelta(minutes=cfg.lease_min)
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
         now = datetime.utcnow()

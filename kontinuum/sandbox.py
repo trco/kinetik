@@ -50,6 +50,10 @@ class Sandbox:
             subprocess.run(["docker", "rm", "-f", self._cid], capture_output=True, text=True)
             self._cid = None
 
+    @property
+    def container_id(self) -> str | None:
+        return self._cid
+
     def __enter__(self) -> "Sandbox":
         return self.start()
 
