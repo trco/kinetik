@@ -89,3 +89,6 @@ class GitHubIssueQueue:
 
     def set_label(self, label: str) -> None:
         gh("issue", "edit", str(self.number), "--repo", self.repo, "--add-label", f"kontinuum:{label}")
+
+    def comment(self, body: str) -> None:
+        gh("issue", "comment", str(self.number), "--repo", self.repo, "--body", body)

@@ -47,7 +47,8 @@ def open_pr(workdir: str, repo: str, issue: int, summary: str, base: str, branch
     branch = branch or f"kontinuum/issue-{issue}"
     git(workdir, "checkout", "-b", branch)
     git(workdir, "add", "-A")
-    git(workdir, "commit", "-m", f"Kontinuum: address #{issue}")
+    git(workdir, "-c", "user.name=kontinuum-bot", "-c", "user.email=kontinuum@users.noreply.github.com",
+        "commit", "-m", f"Kontinuum: address #{issue}")   # self-authored, no reliance on global git config
     git(workdir, "push", "-u", "origin", branch)
     return gh("pr", "create", "--repo", repo, "--base", base, "--head", branch,
               "--title", f"Kontinuum: address #{issue}", "--body", pr_body_text(issue, summary)).strip()

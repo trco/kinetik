@@ -6,10 +6,16 @@
 
 from __future__ import annotations
 
+import os
+import shutil
+import tempfile
 from datetime import datetime, timedelta
 
+from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
+from kontinuum.pipeline import propose
 from kontinuum.protocol import attempt_claim, release_if_mine
+from kontinuum.sandbox import Sandbox
 
 HOLD_LABEL = "kontinuum:hold"
 
@@ -26,8 +32,34 @@ def handle_issue(queue, me: str, now: datetime, lease: timedelta, labels: list[s
 
 
 def execute(queue) -> None:
-    # ponytail: real pipeline (sandbox -> gate -> reviewer -> PR) is steps 3-6. Stub for now.
+    # ponytail: default stub for the daemon until a real agent + recipe are configured.
+    # The end-to-end executor is make_executor() below (clone -> sandbox -> propose -> PR).
     print(f"  claimed {queue.repo}#{queue.number} — would run pipeline")
+
+
+def _clone(repo: str) -> str:
+    root = tempfile.mkdtemp(prefix="kontinuum-")
+    workdir = os.path.join(root, "repo")
+    gh("repo", "clone", repo, workdir, "--", "-q")       # ponytail: full clone per task; cache + worktrees later
+    return workdir
+
+
+def make_executor(base: str, gate_cmd: str, image: str, agent):
+    """Build the real execute(): clone -> sandbox -> propose -> open PR (or mark blocked)."""
+    def execute(queue):
+        workdir = _clone(queue.repo)
+        try:
+            proposal = propose(Sandbox(image, workdir), queue.number, gate_cmd, agent)
+            if proposal is None:
+                queue.set_label("blocked")
+                return None
+            url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, base)
+            queue.comment(f"Kontinuum opened {url}")
+            queue.set_label("pr-open")
+            return url
+        finally:
+            shutil.rmtree(os.path.dirname(workdir), ignore_errors=True)
+    return execute
 
 
 def _ready_args(repo: str, assignee: str | None) -> list[str]:
