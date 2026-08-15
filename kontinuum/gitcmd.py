@@ -1,4 +1,7 @@
-"""Thin wrapper to run git in a working directory (shared by pipeline + effects)."""
+"""Thin wrapper to run git in a working directory (shared by pipeline + effects).
+
+Raises subprocess.CalledProcessError on a non-zero git exit; stdout is returned as text.
+"""
 
 from __future__ import annotations
 
