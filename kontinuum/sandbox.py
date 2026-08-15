@@ -11,6 +11,7 @@ escalation, and only the git worktree (mounted at /work) is visible.
 
 from __future__ import annotations
 
+import os
 import subprocess
 
 
@@ -24,8 +25,12 @@ class Sandbox:
         self._cid: str | None = None
 
     def _flags(self) -> list[str]:
-        # ponytail: root-in-container writes root-owned files on Linux; add --user when we run there.
-        return ["--network", self.network, "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        # Run as the host user, not root. With --cap-drop ALL the container's root loses
+        # CAP_DAC_OVERRIDE, so on Linux it can't write the bind-mounted worktree (owned by the
+        # host uid) — the gate/setup writes silently EACCES. Matching uid keeps writes working
+        # AND drops root. (macOS Docker Desktop masks this via its file-sharing layer.)
+        return ["--user", f"{os.getuid()}:{os.getgid()}",
+                "--network", self.network, "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
                 "-v", f"{self.workdir}:/work", "-w", "/work"]
 
     def run(self, *cmd: str, timeout: int = 600) -> subprocess.CompletedProcess:
