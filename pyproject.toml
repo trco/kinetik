@@ -5,10 +5,16 @@ requires-python = ">=3.9"
 dependencies = ["pyyaml"]
 
 [project.optional-dependencies]
-dev = ["pytest", "hypothesis"]
+dev = ["pytest", "hypothesis", "ruff"]
 
 [project.scripts]
 kontinuum = "kontinuum.loop:main"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
