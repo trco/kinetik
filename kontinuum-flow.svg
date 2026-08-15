@@ -1,75 +1,84 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="880" viewBox="0 0 1040 880" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="840" viewBox="0 0 1040 840" font-family="-apple-system, Segoe UI, Helvetica, Arial, sans-serif">
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
       <path d="M0,0 L8,3 L0,6 Z" fill="#5f6368"/>
     </marker>
+    <marker id="loop" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 Z" fill="#b06000"/>
+    </marker>
   </defs>
 
-  <rect x="0" y="0" width="1040" height="880" fill="#ffffff"/>
-  <text x="30" y="40" font-size="23" font-weight="700" fill="#202124">Kontinuum — code flow (entry → merge)</text>
-  <text x="30" y="64" font-size="14" fill="#5f6368">The whole loop runs with the real Claude agent: claim → contained sandbox → gate → review → PR → CI.</text>
+  <rect x="0" y="0" width="1040" height="840" fill="#ffffff"/>
+  <text x="30" y="38" font-size="22" font-weight="700" fill="#202124">Kontinuum — code flow (entry → merge)</text>
+  <text x="30" y="60" font-size="13.5" fill="#5f6368">A 24/7 daemon: each poll, per repo — tend open PRs, claim one issue, run the pipeline in a sandbox, open a PR.</text>
 
   <g font-size="12.5" fill="#3c4043">
-    <rect x="770" y="26" width="15" height="15" rx="3" fill="#e6f4ea" stroke="#34a853"/>
-    <text x="791" y="38">works now</text>
-    <rect x="880" y="26" width="15" height="15" rx="3" fill="#f1f3f4" stroke="#9aa0a6" stroke-dasharray="2 3"/>
-    <text x="901" y="38">later (§16)</text>
+    <rect x="800" y="24" width="15" height="15" rx="3" fill="#e6f4ea" stroke="#34a853"/>
+    <text x="821" y="36">works now</text>
+    <rect x="800" y="44" width="15" height="15" rx="3" fill="#f1f3f4" stroke="#9aa0a6" stroke-dasharray="2 3"/>
+    <text x="821" y="56">later (§16)</text>
   </g>
 
-  <!-- main path -->
-  <rect x="110" y="84" width="400" height="48" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
-  <text x="128" y="105" font-size="14.5" font-weight="700" fill="#202124">1 · kontinuum run  → main() forever loop</text>
-  <text x="128" y="122" font-size="12" fill="#5f6368">reads config.yaml, loops over your repos</text>
+  <text x="30" y="84" font-size="12.5" fill="#3c4043">commands:  <tspan font-weight="700">kontinuum run · onboard · status · init-labels</tspan>   ·   a <tspan font-weight="700">kontinuum:paused</tspan> issue halts a repo · <tspan font-weight="700">agent required</tspan></text>
 
-  <rect x="110" y="144" width="400" height="48" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
-  <text x="128" y="165" font-size="14.5" font-weight="700" fill="#202124">2 · maintain_prs + poll_ready</text>
-  <text x="128" y="182" font-size="12" fill="#5f6368">red CI on open PRs → blocked; list ready [+ your assignee]</text>
+  <!-- pre-pipeline steps -->
+  <rect x="110" y="98" width="400" height="46" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="128" y="118" font-size="14" font-weight="700" fill="#202124">1 · main loop — every poll_sec, per repo</text>
+  <text x="128" y="135" font-size="12" fill="#5f6368">paused? → skip this repo (an error skips the pass, never the daemon)</text>
 
-  <rect x="110" y="204" width="400" height="48" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
-  <text x="128" y="225" font-size="14.5" font-weight="700" fill="#202124">3 · handle_issue</text>
-  <text x="128" y="242" font-size="12" fill="#5f6368">hold? → release &amp; skip · else → try to claim</text>
+  <rect x="110" y="152" width="400" height="46" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="128" y="172" font-size="14" font-weight="700" fill="#202124">2 · maintain_prs (non-blocking)</text>
+  <text x="128" y="189" font-size="12" fill="#5f6368">a PR that went red on CI or was closed unmerged → blocked</text>
 
-  <rect x="110" y="264" width="400" height="60" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
-  <text x="128" y="285" font-size="14.5" font-weight="700" fill="#202124">4 · attempt_claim — single-owner</text>
-  <text x="128" y="303" font-size="12" fill="#5f6368">read → claim → re-read; first-id wins. One K per issue,</text>
-  <text x="128" y="319" font-size="12" fill="#5f6368">even across machines (lock lives in GitHub comments).</text>
+  <rect x="110" y="206" width="400" height="46" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="128" y="226" font-size="14" font-weight="700" fill="#202124">3 · poll ready + claimed [+ your assignee]</text>
+  <text x="128" y="243" font-size="12" fill="#5f6368">'claimed' too → recover crashed tasks after the lease lapses</text>
 
-  <!-- step 5: pipeline -->
-  <rect x="110" y="344" width="810" height="256" rx="10" fill="#e6f4ea" stroke="#34a853" stroke-width="2"/>
-  <text x="128" y="368" font-size="15" font-weight="700" fill="#202124">5 · execute() — the pipeline (proven end-to-end live)</text>
-
-  <text x="140" y="396" font-size="13" fill="#3c4043">① cached clone → fresh worktree (never touches your checkout)</text>
-  <text x="140" y="422" font-size="13" fill="#3c4043">② 🔒 start box — no secrets, no network</text>
-  <text x="140" y="448" font-size="13" fill="#3c4043">③ 🤖 real Claude agent — edits the worktree, runs its commands IN the box</text>
-  <text x="152" y="465" font-size="11.5" fill="#9aa0a6">your Claude Code login on a laptop · ANTHROPIC_API_KEY on a server</text>
-  <text x="140" y="491" font-size="13" fill="#3c4043">④ ✅ gate — offline tests (deps preinstalled by a trusted setup step)</text>
-  <text x="140" y="517" font-size="13" fill="#3c4043">⑤ 🔎 secret-scan the diff — block leaks before push</text>
-  <text x="140" y="543" font-size="13" fill="#3c4043">⑥ 👀 reviewer — independent AI second opinion (reject → feedback → retry)</text>
-  <text x="140" y="569" font-size="13" fill="#3c4043">⑦ 📤 open PR → comment issue → set pr-open label</text>
+  <rect x="110" y="260" width="400" height="62" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="128" y="280" font-size="14" font-weight="700" fill="#202124">4 · claim — single-owner (first-id wins)</text>
+  <text x="128" y="297" font-size="12" fill="#5f6368">🫀 heartbeat holds the lease for the whole task</text>
+  <text x="128" y="313" font-size="12" fill="#5f6368">hold / blocked label → release &amp; back off</text>
 
   <g stroke="#5f6368" stroke-width="1.6" marker-end="url(#arrow)">
-    <line x1="310" y1="132" x2="310" y2="142"/>
-    <line x1="310" y1="192" x2="310" y2="202"/>
-    <line x1="310" y1="252" x2="310" y2="262"/>
-    <line x1="310" y1="324" x2="310" y2="342"/>
+    <line x1="310" y1="144" x2="310" y2="150"/>
+    <line x1="310" y1="198" x2="310" y2="204"/>
+    <line x1="310" y1="252" x2="310" y2="258"/>
+    <line x1="310" y1="322" x2="310" y2="340"/>
   </g>
 
-  <!-- CI check + human -->
-  <rect x="110" y="632" width="400" height="56" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
-  <text x="128" y="655" font-size="14.5" font-weight="700" fill="#202124">6 · CI check — non-blocking, each loop pass</text>
-  <text x="128" y="673" font-size="12" fill="#5f6368">green → human merges · red → blocked + comment · the worker never waits</text>
+  <!-- pipeline -->
+  <rect x="110" y="344" width="810" height="238" rx="10" fill="#e6f4ea" stroke="#34a853" stroke-width="2"/>
+  <text x="128" y="368" font-size="15" font-weight="700" fill="#202124">5 · execute() — sandboxed pipeline (proven live)</text>
 
-  <rect x="560" y="632" width="360" height="56" rx="8" fill="#ffffff" stroke="#34a853" stroke-width="1.5"/>
-  <text x="576" y="655" font-size="14.5" font-weight="700" fill="#202124">👤 You review the PR and merge</text>
-  <text x="576" y="673" font-size="12" fill="#5f6368">Kontinuum never merges or deploys itself.</text>
+  <text x="140" y="394" font-size="13" fill="#3c4043">① clone → fresh worktree (cached clone; never your checkout)</text>
+  <text x="140" y="418" font-size="13" fill="#3c4043">② 🔒 box — no secrets, no network</text>
+  <text x="140" y="442" font-size="13" fill="#3c4043">③ 🤖 agent — edits the worktree, runs its commands in the box</text>
+  <text x="140" y="466" font-size="13" fill="#3c4043">④ ✅ gate — offline tests (a `setup` step installs deps first, with network)</text>
+  <text x="140" y="490" font-size="13" fill="#3c4043">⑤ 🔎 secret-scan the diff    ⑥ 👀 reviewer — independent AI (explicit APPROVE)</text>
+  <text x="140" y="536" font-size="12.5" font-weight="700" fill="#b06000">↺ any check fails → feedback to the agent → retry (≤3, no repeats) → else blocked</text>
+  <path d="M124 528 q-14 -70 14 -88" fill="none" stroke="#b06000" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#loop)"/>
+  <text x="140" y="566" font-size="13" fill="#3c4043">⑦ 📤 open PR (idempotent) → comment issue → pr-open</text>
 
-  <line x1="310" y1="600" x2="310" y2="630" stroke="#5f6368" stroke-width="1.6" marker-end="url(#arrow)"/>
-  <line x1="510" y1="660" x2="558" y2="660" stroke="#5f6368" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="310" y1="322" x2="310" y2="342" stroke="#5f6368" stroke-width="1.6"/>
+
+  <!-- CI + human -->
+  <rect x="110" y="606" width="400" height="54" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
+  <text x="128" y="627" font-size="14" font-weight="700" fill="#202124">6 · CI check — non-blocking, each pass</text>
+  <text x="128" y="645" font-size="12" fill="#5f6368">green → you merge · red / closed → blocked</text>
+
+  <rect x="560" y="606" width="360" height="54" rx="8" fill="#ffffff" stroke="#34a853" stroke-width="1.5"/>
+  <text x="576" y="627" font-size="14" font-weight="700" fill="#202124">👤 You review the PR and merge</text>
+  <text x="576" y="645" font-size="12" fill="#5f6368">Kontinuum never merges or deploys itself.</text>
+
+  <line x1="310" y1="582" x2="310" y2="604" stroke="#5f6368" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <line x1="510" y1="633" x2="558" y2="633" stroke="#5f6368" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+  <text x="30" y="692" font-size="12.5" fill="#5f6368">Robustness: a task that errors is retried and only blocked after 3 tries; one issue's failure never stops the daemon.</text>
 
   <!-- future -->
-  <line x1="30" y1="720" x2="1010" y2="720" stroke="#dadce0" stroke-width="1.5" stroke-dasharray="6 4"/>
-  <rect x="110" y="736" width="810" height="70" rx="8" fill="#f1f3f4" stroke="#9aa0a6" stroke-width="1.4" stroke-dasharray="3 3"/>
-  <text x="128" y="759" font-size="13.5" font-weight="700" fill="#3c4043">Still ahead (§16 Later)</text>
-  <text x="128" y="779" font-size="12.5" fill="#5f6368">egress-allowlist proxy (registries-only, instead of the offline-deps setup step) · N-diverse reviewers for</text>
-  <text x="128" y="796" font-size="12.5" fill="#5f6368">high-risk work · signal producers (Sentry/Asana → issues) · spec-diff planner · web dashboard</text>
+  <line x1="30" y1="708" x2="1010" y2="708" stroke="#dadce0" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <rect x="110" y="724" width="810" height="66" rx="8" fill="#f1f3f4" stroke="#9aa0a6" stroke-width="1.4" stroke-dasharray="3 3"/>
+  <text x="128" y="747" font-size="13.5" font-weight="700" fill="#3c4043">Still ahead (§16 Later)</text>
+  <text x="128" y="767" font-size="12.5" fill="#5f6368">claim-log compaction (Janitor) · egress-allowlist proxy · N-diverse reviewers · signal producers (Sentry/Asana →</text>
+  <text x="128" y="784" font-size="12.5" fill="#5f6368">issues) · spec-diff planner · web dashboard</text>
 </svg>
