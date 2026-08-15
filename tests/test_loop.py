@@ -6,7 +6,8 @@ import time
 from datetime import datetime, timedelta
 
 from kontinuum.claim import ClaimKind, max_epoch, resolve_owner
-from kontinuum.loop import HOLD_LABEL, LeaseHeartbeat, _issue_list_args, claim_and_run
+from kontinuum.loop import HOLD_LABEL, LeaseHeartbeat, _issue_list_args, claim_and_run, pr_body
+from kontinuum.pipeline import Proposal
 from kontinuum.protocol import attempt_claim
 from tests.fakes import FakeIssueQueue
 
@@ -117,3 +118,14 @@ def test_shared_queue_has_no_assignee_filter():
 def test_personal_queue_filters_by_assignee():
     args = _issue_list_args("owner/repo", "kontinuum:ready", "uros")
     assert args[args.index("--assignee") + 1] == "uros"
+
+
+def test_pr_body_is_structured_and_still_closes_the_issue():
+    body = pr_body(7, Proposal("diff", "Did the thing.", 2), reviewed=True)
+    assert body.startswith("## Summary\nDid the thing.")
+    assert "Closes #7" in body                             # merging must still close the issue
+    assert "reviewer ✓" in body and "(attempt 2)" in body
+
+
+def test_pr_body_omits_reviewer_when_none_ran():
+    assert "reviewer" not in pr_body(7, Proposal("diff", "x", 1), reviewed=False)
