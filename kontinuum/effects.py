@@ -34,11 +34,6 @@ def scan_diff(diff: str) -> list[str]:
     return violations
 
 
-def pr_body_text(issue: int, summary: str) -> str:
-    """`Closes #N` is what makes GitHub auto-close the issue when the PR merges."""
-    return f"Closes #{issue}\n\n{summary}"
-
-
 def open_pr(workdir: str, repo: str, branch: str, title: str, body: str, base: str) -> str:
     """Commit the worktree (detached HEAD) and push it to `branch`, open a PR. Returns the PR URL.
 

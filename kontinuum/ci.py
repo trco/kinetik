@@ -1,13 +1,6 @@
-"""Read a PR's CI result (§9). K gates on CI status — it never runs e2e itself.
-
-A single read per PR, checked each loop pass (non-blocking); the worker never waits on CI.
-"""
+"""Summarize a PR's CI rollup (§9). K gates on CI status — it never runs e2e itself."""
 
 from __future__ import annotations
-
-import json
-
-from kontinuum.github import gh
 
 
 def summarize_checks(checks: list) -> str:
@@ -30,9 +23,3 @@ def summarize_checks(checks: list) -> str:
     if "pending" in seen:
         return "pending"
     return "pass"
-
-
-def ci_state(repo: str, ref: str) -> str:
-    """One read of the PR's checks. ref is the branch/number/url of the PR."""
-    out = gh("pr", "view", ref, "--repo", repo, "--json", "statusCheckRollup")
-    return summarize_checks(json.loads(out).get("statusCheckRollup") or [])

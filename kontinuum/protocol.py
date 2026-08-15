@@ -37,7 +37,7 @@ def heartbeat(queue, me: str, epoch: int, now: datetime, lease: timedelta) -> No
 
 def assert_owner(queue, me: str, now: datetime) -> bool:
     """Guard called before every state transition and effect (§7). False ⇒ abort."""
-    return resolve_owner(queue.read_claim_log(), now) == me
+    return won_claim(queue.read_claim_log(), me, now)   # both are "resolve_owner == me"
 
 
 def release_if_mine(queue, me: str, now: datetime) -> bool:

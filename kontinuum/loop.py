@@ -1,7 +1,7 @@
 """The poll loop: poll ready -> claim -> execute, honoring the human `hold` guard (§7, §10).
 
-`handle_issue` is the tested decision; `poll_ready`/`issue_labels`/`main` are thin `gh` glue.
-`execute` is a stub — the real sandbox -> gate -> reviewer -> PR pipeline is steps 3-6.
+`handle_issue` is the tested decision; `make_executor` builds the real clone -> sandbox -> propose
+-> PR executor; `poll_ready`/`issue_labels`/`main` are thin `gh` glue.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
 from kontinuum.ci import summarize_checks
-from kontinuum.effects import open_pr, pr_body_text
+from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
 from kontinuum.pipeline import Task, propose
@@ -68,12 +68,6 @@ def handle_issue(queue, me: str, now: datetime, lease: timedelta, labels: list[s
     return "skip"
 
 
-def execute(queue, me: str) -> None:
-    # ponytail: default stub for the daemon until a real agent + recipe are configured.
-    # The end-to-end executor is make_executor() below (clone -> sandbox -> propose -> PR).
-    print(f"  claimed {queue.repo}#{queue.number} — would run pipeline")
-
-
 def _default_branch(repo: str) -> str:
     return gh("repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name").strip()
 
@@ -112,10 +106,6 @@ def _exclude_file(workdir: str) -> str:
     # in a worktree, workdir/.git is a FILE; ask git for the real (shared) exclude path
     p = git(workdir, "rev-parse", "--git-path", "info/exclude").strip()
     return p if os.path.isabs(p) else os.path.join(workdir, p)
-
-
-def _read_file(path: str) -> str:
-    return open(path).read() if os.path.exists(path) else ""
 
 
 class DemoAgent:
@@ -160,8 +150,8 @@ def make_executor(agent, reviewer=None):
                 new = _untracked(workdir) - before       # keep installed deps out of the diff/PR
                 if new:
                     exclude_path = _exclude_file(workdir)
-                    exclude_backup = _read_file(exclude_path)   # restored in finally so it can't leak to other issues
-                    with open(exclude_path, "a") as f:
+                    exclude_backup = open(exclude_path).read() if os.path.exists(exclude_path) else ""
+                    with open(exclude_path, "a") as f:          # restored in finally -> no leak to other issues
                         f.write("\n".join(sorted(new)) + "\n")
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
@@ -174,8 +164,8 @@ def make_executor(agent, reviewer=None):
             if any(l in issue_labels(queue.repo, queue.number) for l in STOP_LABELS) or not assert_owner(queue, me, now):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
-            url = open_pr(workdir, queue.repo, branch, f"Kontinuum: address #{queue.number}",
-                          pr_body_text(queue.number, proposal.pr_body), base)
+            body = f"Closes #{queue.number}\n\n{proposal.pr_body}"   # Closes #N -> auto-closes the issue on merge
+            url = open_pr(workdir, queue.repo, branch, f"Kontinuum: address #{queue.number}", body, base)
             queue.comment(f"Kontinuum opened {url}")
             queue.set_label("pr-open")                    # CI is checked non-blocking in maintain_prs()
             return url
@@ -244,8 +234,8 @@ def issue_labels(repo: str, number: int) -> list[str]:
 MAX_ERRORS = 3   # consecutive infra errors on one issue before we give up and block it
 
 
-def run_once(repo: str, me: str, lease: timedelta, bot_login: str,
-             assignee: str | None = None, execute=execute, errors: dict | None = None):
+def run_once(repo: str, me: str, lease: timedelta, bot_login: str, execute,
+             assignee: str | None = None, errors: dict | None = None):
     """One poll pass. Serial: claim and work at most one issue (§11), then return its number.
 
     A per-issue failure never kills the daemon. A transient error releases the claim and retries
@@ -391,7 +381,7 @@ def main(argv=None):
                     print(f"[{stamp}] {repo}: paused")
                     continue
                 maintain_prs(repo, cfg.bot_login)          # non-blocking: red CI on open PRs -> blocked
-                did = run_once(repo, cfg.instance_id, lease, cfg.bot_login, cfg.assignee, executor, errors)
+                did = run_once(repo, cfg.instance_id, lease, cfg.bot_login, executor, cfg.assignee, errors)
                 print(f"[{stamp}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
             except Exception as e:                         # a whole-repo failure skips the pass, never the daemon
                 print(f"[{stamp}] {repo}: pass error: {e}")

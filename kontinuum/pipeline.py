@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 from kontinuum.effects import scan_diff
 from kontinuum.gitcmd import git
-from kontinuum.verify import run_gate
 
 
 @dataclass
@@ -44,11 +43,12 @@ def propose(sandbox, task: Task, gate_cmd: str, agent, reviewer=None, max_attemp
     recent: list[str] = []                               # last few diffs, to catch A/B/A oscillation
     for attempt in range(1, max_attempts + 1):
         pr_body = agent.run(sandbox, task, feedback)     # edits the worktree at sandbox.workdir
-        gate = run_gate(sandbox, gate_cmd)
+        gate = sandbox.run("sh", "-c", gate_cmd)         # the local gate, offline in the sandbox
+        gate_passed = gate.returncode == 0
         git(sandbox.workdir, "add", "-A")
         diff = git(sandbox.workdir, "diff", "--cached")
         secrets = scan_diff(diff)
-        ok = bool(diff.strip()) and gate.passed and not secrets   # empty diff = the agent did nothing
+        ok = bool(diff.strip()) and gate_passed and not secrets   # empty diff = the agent did nothing
         # only spend a review once the change is real, green and secret-free
         verdict = reviewer.review(diff, task) if (reviewer and ok) else Verdict(True)
         if ok and verdict.approved:
@@ -56,8 +56,8 @@ def propose(sandbox, task: Task, gate_cmd: str, agent, reviewer=None, max_attemp
 
         if not diff.strip():
             feedback = "You made no changes — implement the issue by editing files."
-        elif not gate.passed:
-            feedback = f"The gate command failed — fix the code so it passes:\n{gate.log[-1500:]}"
+        elif not gate_passed:
+            feedback = f"The gate command failed — fix the code so it passes:\n{(gate.stdout + gate.stderr)[-1500:]}"
         elif secrets:
             feedback = f"The change adds secrets ({', '.join(secrets)}); remove them."
         else:
