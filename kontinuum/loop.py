@@ -15,7 +15,7 @@ import threading
 from datetime import datetime, timedelta
 
 from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
-from kontinuum.ci import ci_state
+from kontinuum.ci import summarize_checks
 from kontinuum.effects import open_pr, pr_body_text
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
@@ -108,17 +108,14 @@ def _untracked(workdir: str) -> set[str]:
     return {e[3:] for e in out.split("\0") if e.startswith("?? ")}
 
 
-def _gitignore(workdir: str, paths: set[str]) -> None:
-    """Exclude paths (e.g. the setup step's installed deps) so they never enter the diff/PR."""
-    if not paths:
-        return
-    # in a worktree, workdir/.git is a FILE; ask git for the real exclude path
-    exclude = git(workdir, "rev-parse", "--git-path", "info/exclude").strip()
-    if not os.path.isabs(exclude):
-        exclude = os.path.join(workdir, exclude)
-    os.makedirs(os.path.dirname(exclude), exist_ok=True)
-    with open(exclude, "a") as f:
-        f.write("\n".join(sorted(paths)) + "\n")
+def _exclude_file(workdir: str) -> str:
+    # in a worktree, workdir/.git is a FILE; ask git for the real (shared) exclude path
+    p = git(workdir, "rev-parse", "--git-path", "info/exclude").strip()
+    return p if os.path.isabs(p) else os.path.join(workdir, p)
+
+
+def _read_file(path: str) -> str:
+    return open(path).read() if os.path.exists(path) else ""
 
 
 class DemoAgent:
@@ -150,6 +147,7 @@ def make_executor(agent, reviewer=None):
             return None
         base = _default_branch(queue.repo)
         workdir, cache = _worktree(queue.repo, base)
+        exclude_path = exclude_backup = None
         try:
             recipe = load_recipe(workdir)                # per-repo setup/gate/image
             if recipe.setup:                             # trusted install WITH network, before the isolated box
@@ -159,7 +157,12 @@ def make_executor(agent, reviewer=None):
                     queue.set_label("blocked")
                     queue.comment(f"Kontinuum setup step failed (exit {r.returncode}):\n{(r.stdout + r.stderr)[-800:]}")
                     return None
-                _gitignore(workdir, _untracked(workdir) - before)   # keep installed deps out of the diff/PR
+                new = _untracked(workdir) - before       # keep installed deps out of the diff/PR
+                if new:
+                    exclude_path = _exclude_file(workdir)
+                    exclude_backup = _read_file(exclude_path)   # restored in finally so it can't leak to other issues
+                    with open(exclude_path, "a") as f:
+                        f.write("\n".join(sorted(new)) + "\n")
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
             sandbox = Sandbox(recipe.image, workdir, recipe.network)   # agent + gate: offline by default
@@ -177,6 +180,9 @@ def make_executor(agent, reviewer=None):
             queue.set_label("pr-open")                    # CI is checked non-blocking in maintain_prs()
             return url
         finally:
+            if exclude_path is not None:                 # shared exclude is serial-safe -> restore, no cross-issue leak
+                with open(exclude_path, "w") as f:
+                    f.write(exclude_backup)
             _remove_worktree(cache, workdir)
     return execute
 
@@ -204,7 +210,7 @@ def poll_ready(repo: str, assignee: str | None = None) -> list[int]:
 
 
 def maintain_prs(repo: str, bot_login: str) -> None:
-    """Non-blocking pass: mark any pr-open issue whose PR's CI has gone red as blocked."""
+    """Non-blocking pass: block a pr-open issue whose PR went red on CI or was closed unmerged."""
     out = gh("issue", "list", "--repo", repo, "--label", "kontinuum:pr-open",
              "--state", "open", "--json", "number", "--jq", ".[].number")
     for line in out.splitlines():
@@ -212,12 +218,22 @@ def maintain_prs(repo: str, bot_login: str) -> None:
             continue
         n = int(line)
         try:
-            if ci_state(repo, f"kontinuum/issue-{n}") == "fail":
-                q = GitHubIssueQueue(repo, n, bot_login)
-                q.set_label("blocked")
-                q.comment("CI is failing on the PR — needs a human.")
+            info = json.loads(gh("pr", "view", f"kontinuum/issue-{n}", "--repo", repo,
+                                 "--json", "state,statusCheckRollup"))
         except Exception:
             continue                                      # lingering label / no PR — skip, don't kill the pass
+        if info.get("state") == "CLOSED":                 # human closed it without merging
+            reason = "The PR was closed without merging — needs a human."
+        elif summarize_checks(info.get("statusCheckRollup") or []) == "fail":
+            reason = "CI is failing on the PR — needs a human."
+        else:
+            continue
+        try:
+            q = GitHubIssueQueue(repo, n, bot_login)
+            q.set_label("blocked")
+            q.comment(reason)
+        except Exception:
+            pass
 
 
 def issue_labels(repo: str, number: int) -> list[str]:
@@ -242,8 +258,8 @@ def run_once(repo: str, me: str, lease: timedelta, bot_login: str,
         now = datetime.utcnow()                          # fresh clock per issue, not stale per pass
         try:
             status = handle_issue(q, me, now, lease, issue_labels(repo, n), execute)
-            errors.pop((repo, n), None)                  # handled cleanly -> reset its error count
-            if status == "executed":
+            if status == "executed":                     # real work -> reset the error count and end the pass
+                errors.pop((repo, n), None)
                 return n
         except Exception as e:
             errors[(repo, n)] = errors.get((repo, n), 0) + 1
@@ -357,13 +373,14 @@ def main(argv=None):
         "instance_id": args.instance_id, "bot_login": args.bot_login, "assignee": args.assignee,
         "agent": args.agent, "repos": args.repos, "lease_min": args.lease_min, "poll_sec": args.poll_sec,
     })
-    # ponytail: default stays the stub so nothing opens PRs until a real agent is chosen.
     if cfg.agent == "claude":
         executor = make_executor(ClaudeAgentRunner(), ClaudeReviewer())
     elif cfg.agent == "demo":
         executor = make_executor(DemoAgent())
-    else:
-        executor = execute
+    else:                                                 # the stub never advances an issue -> would re-claim forever
+        raise SystemExit("kontinuum run: set `agent: claude` in the config (or `demo` to exercise the pipeline)")
+    for repo in cfg.repos:                                # ensure kontinuum:* labels exist before we set them
+        init_labels(repo)
     lease = timedelta(minutes=cfg.lease_min)
     errors: dict = {}                                      # per-issue consecutive-error counts, across passes
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real

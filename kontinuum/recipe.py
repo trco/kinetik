@@ -30,6 +30,7 @@ def load_recipe(workdir: str) -> Recipe:
         data = yaml.safe_load(f) or {}
     missing = [k for k in ("image", "gate") if not data.get(k)]
     if missing:
-        raise SystemExit(f"kontinuum: {path} missing: {', '.join(missing)}")
+        # a plain error (NOT SystemExit) so the daemon's per-issue/per-repo guards catch it
+        raise ValueError(f"{path} missing: {', '.join(missing)}")
     return Recipe(image=data["image"], gate=data["gate"],
                   setup=data.get("setup", ""), network=data.get("network", "none"))

@@ -26,6 +26,6 @@ def test_setup_and_network_are_read(tmp_path):
     assert r.network == "bridge"
 
 
-def test_missing_required_fails_fast(tmp_path):
-    with pytest.raises(SystemExit):
+def test_missing_required_raises(tmp_path):
+    with pytest.raises(ValueError):                       # not SystemExit — must be catchable in the loop
         load_recipe(_repo(tmp_path, "image: alpine\n"))   # no gate
