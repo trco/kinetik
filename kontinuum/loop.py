@@ -176,7 +176,7 @@ def build_executor(agent, reviewer=None):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
             body = pr_body(queue.number, proposal, reviewed=reviewer is not None)
-            url = open_pr(workdir, queue.repo, branch, f"Kontinuum: address #{queue.number}", body, base)
+            url = open_pr(workdir, queue.repo, branch, f"{task.title} (#{queue.number})", body, base)
             queue.comment(f"Kontinuum opened {url}")
             queue.set_label("pr-open")                    # CI is checked non-blocking in reconcile_open_prs()
             return url
