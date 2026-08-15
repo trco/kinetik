@@ -48,12 +48,15 @@ def propose(sandbox, task: Task, gate_cmd: str, agent, reviewer=None, max_attemp
         git(sandbox.workdir, "add", "-A")
         diff = git(sandbox.workdir, "diff", "--cached")
         secrets = scan_diff(diff)
-        # only spend a review once the change is green and secret-free
-        verdict = reviewer.review(diff, task) if (reviewer and gate.passed and not secrets) else Verdict(True)
-        if gate.passed and not secrets and verdict.approved:
+        ok = bool(diff.strip()) and gate.passed and not secrets   # empty diff = the agent did nothing
+        # only spend a review once the change is real, green and secret-free
+        verdict = reviewer.review(diff, task) if (reviewer and ok) else Verdict(True)
+        if ok and verdict.approved:
             return Proposal(diff, pr_body, attempt)
 
-        if not gate.passed:
+        if not diff.strip():
+            feedback = "You made no changes — implement the issue by editing files."
+        elif not gate.passed:
             feedback = f"The gate command failed — fix the code so it passes:\n{gate.log[-1500:]}"
         elif secrets:
             feedback = f"The change adds secrets ({', '.join(secrets)}); remove them."

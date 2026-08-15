@@ -50,12 +50,16 @@ class ClaudeAgentRunner:
             prompt = _prompt(task)
             if feedback:
                 prompt += f"\n\nA previous attempt failed. Fix it based on this:\n{feedback}"
-            r = subprocess.run(
-                ["claude", "-p", prompt, "--mcp-config", cfgpath, "--strict-mcp-config",
-                 "--allowedTools", "Read", "Edit", "Write", "mcp__kontinuum-sandbox__run",
-                 "--disallowedTools", "Bash", "--permission-mode", "acceptEdits"],
-                cwd=sandbox.workdir, capture_output=True, text=True, timeout=self.timeout)
-            return (r.stdout or "").strip() or f"Implements #{task.number}"
+            try:
+                r = subprocess.run(
+                    ["claude", "-p", prompt, "--mcp-config", cfgpath, "--strict-mcp-config",
+                     "--allowedTools", "Read", "Edit", "Write", "mcp__kontinuum-sandbox__run",
+                     "--disallowedTools", "Bash", "--permission-mode", "acceptEdits"],
+                    cwd=sandbox.workdir, capture_output=True, text=True, timeout=self.timeout)
+                out = (r.stdout or "").strip()
+            except subprocess.TimeoutExpired:
+                out = f"(agent timed out after {self.timeout}s)"   # gate/empty-diff check handles the result
+            return out or f"Implements #{task.number}"
         finally:
             sandbox.stop()
 
@@ -73,9 +77,13 @@ class ClaudeReviewer:
             "Does it correctly and safely address the issue? Answer with APPROVE or REJECT on the "
             "first line, then a one-sentence reason."
         )
-        r = subprocess.run(
-            ["claude", "-p", prompt, "--disallowedTools", *_NO_TOOLS, "--permission-mode", "acceptEdits"],
-            capture_output=True, text=True, timeout=self.timeout)
-        out = (r.stdout or "").strip()
-        approved = "REJECT" not in out.split("\n", 1)[0].upper()   # default to approve unless it clearly rejects
-        return Verdict(approved, out[:300])
+        try:
+            r = subprocess.run(
+                ["claude", "-p", prompt, "--disallowedTools", *_NO_TOOLS, "--permission-mode", "acceptEdits"],
+                capture_output=True, text=True, timeout=self.timeout)
+            out = (r.stdout or "").strip()
+        except subprocess.TimeoutExpired:
+            return Verdict(False, "reviewer timed out")
+        first = out.split("\n", 1)[0].upper()
+        approved = "APPROVE" in first and "REJECT" not in first   # explicit APPROVE; empty/unparseable -> reject
+        return Verdict(approved, out[:300] or "reviewer produced no output")

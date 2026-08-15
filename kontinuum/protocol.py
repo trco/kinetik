@@ -12,17 +12,17 @@ from datetime import datetime, timedelta
 from kontinuum.claim import Kind, max_epoch, plan_claim, resolve_owner, won_claim
 
 
-def attempt_claim(queue, me: str, now: datetime, lease: timedelta) -> bool:
-    """Try to own the issue. Returns True iff we hold it after read-back."""
+def attempt_claim(queue, me: str, now: datetime, lease: timedelta) -> int | None:
+    """Try to own the issue. Returns the epoch we won at, or None if we didn't."""
     plan = plan_claim(queue.read_claim_log(), me, now)
     if plan.skip:                                          # someone holds a live lease
-        return False
+        return None
     queue.append(Kind.CLAIM, me, plan.epoch, now + lease)
     if won_claim(queue.read_claim_log(), me, now):         # read-back breaks same-tick ties
         queue.set_label("claimed")
-        return True
+        return plan.epoch                                  # the exact epoch we own -> heartbeat at this
     queue.append(Kind.RELEASE, me, plan.epoch, now + lease)  # lost the tie — yield cleanly
-    return False
+    return None
 
 
 def heartbeat(queue, me: str, epoch: int, now: datetime, lease: timedelta) -> None:

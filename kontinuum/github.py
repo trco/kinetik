@@ -15,6 +15,7 @@ from datetime import datetime
 from kontinuum.claim import ClaimEntry, Kind
 
 MARKER = "kontinuum-claim"
+STATE_LABELS = ("ready", "claimed", "pr-open", "blocked", "needs-triage")   # mutually-exclusive projection
 
 
 def format_marker(kind: Kind, owner: str, epoch: int, lease_until: datetime) -> str:
@@ -87,8 +88,22 @@ class GitHubIssueQueue:
         body = format_marker(kind, owner, epoch, lease_until)
         gh("api", f"repos/{self.repo}/issues/{self.number}/comments", "-f", f"body={body}")
 
+    def labels(self) -> list[str]:
+        out = gh("issue", "view", str(self.number), "--repo", self.repo, "--json", "labels", "--jq", ".labels[].name")
+        return [line for line in out.splitlines() if line.strip()]
+
     def set_label(self, label: str) -> None:
-        gh("issue", "edit", str(self.number), "--repo", self.repo, "--add-label", f"kontinuum:{label}")
+        """Set the exclusive state label: add it and remove any OTHER kontinuum state label.
+
+        Without this, `ready` is never cleared and poll_ready keeps re-selecting a worked issue.
+        """
+        keep = f"kontinuum:{label}"
+        remove = [l for l in self.labels()
+                  if l.startswith("kontinuum:") and l.rsplit(":", 1)[-1] in STATE_LABELS and l != keep]
+        args = ["issue", "edit", str(self.number), "--repo", self.repo, "--add-label", keep]
+        for r in remove:
+            args += ["--remove-label", r]
+        gh(*args)
 
     def comment(self, body: str) -> None:
         gh("issue", "comment", str(self.number), "--repo", self.repo, "--body", body)

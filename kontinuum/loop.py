@@ -16,7 +16,6 @@ from datetime import datetime, timedelta
 
 from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
 from kontinuum.ci import ci_state
-from kontinuum.claim import max_epoch
 from kontinuum.effects import open_pr, pr_body_text
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
@@ -60,8 +59,8 @@ def handle_issue(queue, me: str, now: datetime, lease: timedelta, labels: list[s
     if HOLD_LABEL in labels:
         release_if_mine(queue, me, now)              # human forcibly reclaimed -> back off
         return "hold"
-    if attempt_claim(queue, me, now, lease):
-        epoch = max_epoch(queue.read_claim_log())    # our winning epoch, to heartbeat at
+    epoch = attempt_claim(queue, me, now, lease)     # the exact epoch we won, or None
+    if epoch is not None:
         with Heartbeater(queue, me, epoch, lease):   # keep the lease alive for the whole task
             execute(queue, me)
         return "executed"
@@ -102,6 +101,18 @@ def _remove_worktree(cache: str, workdir: str) -> None:
     shutil.rmtree(os.path.dirname(workdir), ignore_errors=True)
 
 
+def _untracked(workdir: str) -> set[str]:
+    out = git(workdir, "status", "--porcelain", "--untracked-files=normal")
+    return {line[3:] for line in out.splitlines() if line.startswith("?? ")}
+
+
+def _gitignore(workdir: str, paths: set[str]) -> None:
+    """Exclude paths (e.g. the setup step's installed deps) so they never enter the diff/PR."""
+    if paths:
+        with open(os.path.join(workdir, ".git", "info", "exclude"), "a") as f:
+            f.write("\n".join(sorted(paths)) + "\n")
+
+
 class DemoAgent:
     """Wiring/demo agent: drops a marker file so the pipeline has a diff. Not real work."""
 
@@ -125,12 +136,18 @@ def make_executor(agent, reviewer=None):
         if existing:
             queue.set_label("pr-open")
             return existing
+        now = datetime.utcnow()                          # early §7 guard: bail before any expensive work
+        if HOLD_LABEL in queue.labels() or not assert_owner(queue, me, now):
+            release_if_mine(queue, me, now)
+            return None
         base = _default_branch(queue.repo)
         workdir, cache = _worktree(queue.repo, base)
         try:
             recipe = load_recipe(workdir)                # per-repo setup/gate/image
             if recipe.setup:                             # trusted install WITH network, before the isolated box
+                before = _untracked(workdir)
                 Sandbox(recipe.image, workdir, "bridge").run("sh", "-c", recipe.setup)
+                _gitignore(workdir, _untracked(workdir) - before)   # keep installed deps out of the diff/PR
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
             sandbox = Sandbox(recipe.image, workdir, recipe.network)   # agent + gate: offline by default
@@ -152,8 +169,8 @@ def make_executor(agent, reviewer=None):
     return execute
 
 
-def _ready_args(repo: str, assignee: str | None) -> list[str]:
-    args = ["issue", "list", "--repo", repo, "--label", "kontinuum:ready",
+def _list_args(repo: str, label: str, assignee: str | None) -> list[str]:
+    args = ["issue", "list", "--repo", repo, "--label", label,
             "--state", "open", "--json", "number", "--jq", ".[].number"]
     if assignee:                                 # personal queue: only issues assigned to this user
         args += ["--assignee", assignee]
@@ -161,8 +178,17 @@ def _ready_args(repo: str, assignee: str | None) -> list[str]:
 
 
 def poll_ready(repo: str, assignee: str | None = None) -> list[int]:
-    out = gh(*_ready_args(repo, assignee))
-    return [int(line) for line in out.splitlines() if line.strip()]
+    """Issues to consider: ready (new work) + claimed (possibly-orphaned; attempt_claim reclaims if free)."""
+    seen: set[int] = set()
+    out: list[int] = []
+    for label in ("kontinuum:ready", "kontinuum:claimed"):
+        for line in gh(*_list_args(repo, label, assignee)).splitlines():
+            if line.strip():
+                n = int(line)
+                if n not in seen:
+                    seen.add(n)
+                    out.append(n)
+    return out
 
 
 def maintain_prs(repo: str, bot_login: str) -> None:
@@ -187,13 +213,26 @@ def issue_labels(repo: str, number: int) -> list[str]:
     return [line for line in out.splitlines() if line.strip()]
 
 
-def run_once(repo: str, me: str, now: datetime, lease: timedelta, bot_login: str,
+def run_once(repo: str, me: str, lease: timedelta, bot_login: str,
              assignee: str | None = None, execute=execute):
-    """One poll pass. Serial: claim and work at most one issue (§11), then return its number."""
+    """One poll pass. Serial: claim and work at most one issue (§11), then return its number.
+
+    A per-issue failure never kills the daemon: it's marked blocked, released, and the pass continues.
+    """
     for n in poll_ready(repo, assignee):
         q = GitHubIssueQueue(repo, n, bot_login)
-        if handle_issue(q, me, now, lease, issue_labels(repo, n), execute) == "executed":
-            return n
+        now = datetime.utcnow()                          # fresh clock per issue, not stale per pass
+        try:
+            if handle_issue(q, me, now, lease, issue_labels(repo, n), execute) == "executed":
+                return n
+        except Exception as e:
+            print(f"  #{n}: error, marking blocked: {e}")
+            try:
+                q.set_label("blocked")
+                q.comment(f"Kontinuum hit an error and stopped on this issue: {e}")
+                release_if_mine(q, me, datetime.utcnow())
+            except Exception:
+                pass
     return None
 
 
@@ -301,14 +340,17 @@ def main(argv=None):
         executor = execute
     lease = timedelta(minutes=cfg.lease_min)
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
-        now = datetime.utcnow()
         for repo in cfg.repos:                             # one K, several repos
-            if is_paused(repo):                            # kill switch: kontinuum:paused halts this repo
-                print(f"[{now:%H:%M:%S}] {repo}: paused")
-                continue
-            maintain_prs(repo, cfg.bot_login)              # non-blocking: red CI on open PRs -> blocked
-            did = run_once(repo, cfg.instance_id, now, lease, cfg.bot_login, cfg.assignee, executor)
-            print(f"[{now:%H:%M:%S}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
+            stamp = datetime.utcnow().strftime("%H:%M:%S")
+            try:
+                if is_paused(repo):                        # kill switch: kontinuum:paused halts this repo
+                    print(f"[{stamp}] {repo}: paused")
+                    continue
+                maintain_prs(repo, cfg.bot_login)          # non-blocking: red CI on open PRs -> blocked
+                did = run_once(repo, cfg.instance_id, lease, cfg.bot_login, cfg.assignee, executor)
+                print(f"[{stamp}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
+            except Exception as e:                         # a whole-repo failure skips the pass, never the daemon
+                print(f"[{stamp}] {repo}: pass error: {e}")
         time.sleep(cfg.poll_sec)
 
 

@@ -40,14 +40,15 @@ def pr_body_text(issue: int, summary: str) -> str:
 
 
 def open_pr(workdir: str, repo: str, branch: str, title: str, body: str, base: str) -> str:
-    """Commit the worktree on `branch`, push it, open a PR. Returns the PR URL.
+    """Commit the worktree (detached HEAD) and push it to `branch`, open a PR. Returns the PR URL.
 
-    All the credentialed writes live here — the sandboxed agent never reaches this.
+    Commits on the detached worktree HEAD and pushes HEAD -> refs/heads/{branch}, so NO local branch
+    is created in the shared cache clone (which otherwise leaks and makes a re-run crash on checkout).
+    Force is safe: it's K's own ephemeral per-issue branch. All credentialed writes live here.
     """
-    git(workdir, "checkout", "-b", branch)
     git(workdir, "add", "-A")
     git(workdir, "-c", "user.name=kontinuum-bot", "-c", "user.email=kontinuum@users.noreply.github.com",
         "commit", "-m", title)                            # self-authored, no reliance on global git config
-    git(workdir, "push", "-u", "origin", branch)
+    git(workdir, "push", "--force", "origin", f"HEAD:refs/heads/{branch}")
     return gh("pr", "create", "--repo", repo, "--base", base, "--head", branch,
               "--title", title, "--body", body).strip()

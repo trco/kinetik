@@ -14,7 +14,7 @@ LEASE = timedelta(hours=1)
 
 def test_first_instance_claims_and_labels():
     q = FakeIssueQueue()
-    assert attempt_claim(q, "i0", NOW, LEASE) is True
+    assert attempt_claim(q, "i0", NOW, LEASE) == 1         # returns the epoch we won
     assert q.label == "claimed"
     assert resolve_owner(q.read_claim_log(), NOW) == "i0"
 
@@ -22,7 +22,7 @@ def test_first_instance_claims_and_labels():
 def test_second_instance_skips_a_live_claim():
     q = FakeIssueQueue()
     attempt_claim(q, "i0", NOW, LEASE)
-    assert attempt_claim(q, "i1", NOW, LEASE) is False
+    assert attempt_claim(q, "i1", NOW, LEASE) is None
     assert resolve_owner(q.read_claim_log(), NOW) == "i0"
 
 
@@ -31,7 +31,7 @@ def test_reclaim_after_lease_expiry():
     attempt_claim(q, "i0", NOW, LEASE)                     # i0 owns, then crashes (no heartbeats)
     later = NOW + LEASE + timedelta(minutes=1)             # lease lapses
     assert resolve_owner(q.read_claim_log(), later) is None
-    assert attempt_claim(q, "i1", later, LEASE) is True    # i1 reclaims at epoch+1
+    assert attempt_claim(q, "i1", later, LEASE) == 2       # i1 reclaims at epoch+1
     assert resolve_owner(q.read_claim_log(), later) == "i1"
 
 

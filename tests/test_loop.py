@@ -6,7 +6,7 @@ import time
 from datetime import datetime, timedelta
 
 from kontinuum.claim import Kind, max_epoch, resolve_owner
-from kontinuum.loop import HOLD_LABEL, Heartbeater, _ready_args, handle_issue
+from kontinuum.loop import HOLD_LABEL, Heartbeater, _list_args, handle_issue
 from kontinuum.protocol import attempt_claim
 from tests.fakes import FakeIssueQueue
 
@@ -63,9 +63,9 @@ def test_heartbeater_refreshes_the_lease():
 
 
 def test_shared_queue_has_no_assignee_filter():
-    assert "--assignee" not in _ready_args("owner/repo", None)
+    assert "--assignee" not in _list_args("owner/repo", "kontinuum:ready", None)
 
 
 def test_personal_queue_filters_by_assignee():
-    args = _ready_args("owner/repo", "uros")
+    args = _list_args("owner/repo", "kontinuum:ready", "uros")
     assert args[args.index("--assignee") + 1] == "uros"
