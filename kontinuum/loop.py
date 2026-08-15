@@ -52,6 +52,7 @@ class Heartbeater:
         self._thread.join(timeout=5)
 
 HOLD_LABEL = "kontinuum:hold"
+STOP_LABELS = ("kontinuum:hold", "kontinuum:blocked")   # a human/other pass told us to stop
 
 
 def handle_issue(queue, me: str, now: datetime, lease: timedelta, labels: list[str], execute) -> str:
@@ -62,8 +63,8 @@ def handle_issue(queue, me: str, now: datetime, lease: timedelta, labels: list[s
     epoch = attempt_claim(queue, me, now, lease)     # the exact epoch we won, or None
     if epoch is not None:
         with Heartbeater(queue, me, epoch, lease):   # keep the lease alive for the whole task
-            execute(queue, me)
-        return "executed"
+            result = execute(queue, me)
+        return "executed" if result else "bailed"    # bailed (hold/lost/blocked) -> pass moves on
     return "skip"
 
 
@@ -108,9 +109,15 @@ def _untracked(workdir: str) -> set[str]:
 
 def _gitignore(workdir: str, paths: set[str]) -> None:
     """Exclude paths (e.g. the setup step's installed deps) so they never enter the diff/PR."""
-    if paths:
-        with open(os.path.join(workdir, ".git", "info", "exclude"), "a") as f:
-            f.write("\n".join(sorted(paths)) + "\n")
+    if not paths:
+        return
+    # in a worktree, workdir/.git is a FILE; ask git for the real exclude path
+    exclude = git(workdir, "rev-parse", "--git-path", "info/exclude").strip()
+    if not os.path.isabs(exclude):
+        exclude = os.path.join(workdir, exclude)
+    os.makedirs(os.path.dirname(exclude), exist_ok=True)
+    with open(exclude, "a") as f:
+        f.write("\n".join(sorted(paths)) + "\n")
 
 
 class DemoAgent:
@@ -137,7 +144,7 @@ def make_executor(agent, reviewer=None):
             queue.set_label("pr-open")
             return existing
         now = datetime.utcnow()                          # early §7 guard: bail before any expensive work
-        if HOLD_LABEL in queue.labels() or not assert_owner(queue, me, now):
+        if any(l in queue.labels() for l in STOP_LABELS) or not assert_owner(queue, me, now):
             release_if_mine(queue, me, now)
             return None
         base = _default_branch(queue.repo)
@@ -159,9 +166,9 @@ def make_executor(agent, reviewer=None):
             if proposal is None:
                 queue.set_label("blocked")
                 return None
-            now = datetime.utcnow()                      # §7 guard: still ours, and no human hold, before any effect
-            if HOLD_LABEL in issue_labels(queue.repo, queue.number) or not assert_owner(queue, me, now):
-                release_if_mine(queue, me, now)          # human hold or lost lease -> back off, open no PR
+            now = datetime.utcnow()                      # §7 guard: still ours + not stopped, before any effect
+            if any(l in issue_labels(queue.repo, queue.number) for l in STOP_LABELS) or not assert_owner(queue, me, now):
+                release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
             url = open_pr(workdir, queue.repo, branch, f"Kontinuum: address #{queue.number}",
                           pr_body_text(queue.number, proposal.pr_body), base)
@@ -232,9 +239,12 @@ def run_once(repo: str, me: str, lease: timedelta, bot_login: str,
         except Exception as e:
             print(f"  #{n}: error, marking blocked: {e}")
             try:
+                release_if_mine(q, me, datetime.utcnow())   # give up ownership FIRST, even if labeling fails
+            except Exception:
+                pass
+            try:
                 q.set_label("blocked")
                 q.comment(f"Kontinuum hit an error and stopped on this issue: {e}")
-                release_if_mine(q, me, datetime.utcnow())
             except Exception:
                 pass
     return None

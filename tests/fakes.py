@@ -10,10 +10,13 @@ from kontinuum.pipeline import Verdict
 
 
 class FakeIssueQueue:
-    def __init__(self):
+    def __init__(self, repo: str = "owner/repo", number: int = 1):
+        self.repo = repo
+        self.number = number
         self._log: list[ClaimEntry] = []
         self._ids = itertools.count()
         self.label: str | None = None
+        self.comments: list[str] = []
 
     def read_claim_log(self) -> list[ClaimEntry]:
         return list(self._log)                             # snapshot, like a GET
@@ -22,7 +25,13 @@ class FakeIssueQueue:
         self._log.append(ClaimEntry(next(self._ids), kind, owner, epoch, lease_until))  # server assigns id
 
     def set_label(self, label: str) -> None:
-        self.label = label
+        self.label = label                                 # fake is exclusive by construction (one label)
+
+    def labels(self) -> list[str]:
+        return [f"kontinuum:{self.label}"] if self.label else []
+
+    def comment(self, body: str) -> None:
+        self.comments.append(body)
 
 
 class FakeAgentRunner:

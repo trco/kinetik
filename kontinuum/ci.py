@@ -16,15 +16,15 @@ def summarize_checks(checks: list) -> str:
         return "none"
     seen = set()
     for c in checks:
-        status = (c.get("status") or "").upper()          # CheckRun: QUEUED / IN_PROGRESS / COMPLETED
         conclusion = (c.get("conclusion") or "").upper()  # CheckRun result
-        state = (c.get("state") or "").upper()            # StatusContext: SUCCESS / FAILURE / PENDING / ERROR
-        if status in ("QUEUED", "IN_PROGRESS", "PENDING", "WAITING") or state == "PENDING":
-            seen.add("pending")
+        state = (c.get("state") or "").upper()            # StatusContext: SUCCESS / FAILURE / PENDING / ERROR / EXPECTED
+        if conclusion in ("FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE") \
+                or state in ("FAILURE", "ERROR"):
+            seen.add("fail")                              # only explicit failures block
         elif conclusion in ("SUCCESS", "SKIPPED", "NEUTRAL") or state == "SUCCESS":
             seen.add("pass")
         else:
-            seen.add("fail")   # FAILURE/ERROR and any unrecognized state -> conservative fail
+            seen.add("pending")   # queued/in-progress/EXPECTED/empty/unknown -> wait, re-check next pass
     if "fail" in seen:
         return "fail"
     if "pending" in seen:

@@ -14,7 +14,12 @@ from kontinuum.claim import Kind, max_epoch, plan_claim, resolve_owner, won_clai
 
 def attempt_claim(queue, me: str, now: datetime, lease: timedelta) -> int | None:
     """Try to own the issue. Returns the epoch we won at, or None if we didn't."""
-    plan = plan_claim(queue.read_claim_log(), me, now)
+    log = queue.read_claim_log()
+    if resolve_owner(log, now) == me:                     # already ours (re-polled) — refresh, don't re-claim
+        epoch = max_epoch(log)
+        heartbeat(queue, me, epoch, now, lease)
+        return epoch
+    plan = plan_claim(log, me, now)
     if plan.skip:                                          # someone holds a live lease
         return None
     queue.append(Kind.CLAIM, me, plan.epoch, now + lease)

@@ -84,6 +84,5 @@ class ClaudeReviewer:
             out = (r.stdout or "").strip()
         except subprocess.TimeoutExpired:
             return Verdict(False, "reviewer timed out")
-        first = out.split("\n", 1)[0].upper()
-        approved = "APPROVE" in first and "REJECT" not in first   # explicit APPROVE; empty/unparseable -> reject
+        approved = out.lstrip().upper().startswith("APPROVE")   # verdict is the first token; empty -> reject
         return Verdict(approved, out[:300] or "reviewer produced no output")

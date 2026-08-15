@@ -16,7 +16,12 @@ LEASE = timedelta(hours=1)
 
 def _recorder():
     calls = []
-    return (lambda q, me: calls.append(q)), calls
+
+    def execute(q, me):
+        calls.append(q)
+        return "https://pr"          # truthy = real work happened
+
+    return execute, calls
 
 
 def test_claims_and_executes_a_ready_issue():
@@ -50,6 +55,20 @@ def test_hold_prevents_a_fresh_claim():
     assert handle_issue(q, "i0", NOW, LEASE, [HOLD_LABEL], execute) == "hold"
     assert resolve_owner(q.read_claim_log(), NOW) is None  # never claimed
     assert calls == []
+
+
+def test_bails_when_execute_does_nothing():
+    q = FakeIssueQueue()
+    assert handle_issue(q, "i0", NOW, LEASE, [], lambda q, me: None) == "bailed"   # execute returned None
+
+
+def test_reclaim_of_own_issue_does_not_inflate_epoch():
+    q = FakeIssueQueue()
+    e1 = attempt_claim(q, "i0", NOW, LEASE)                # claim epoch 1
+    before = len(q.read_claim_log())
+    e2 = attempt_claim(q, "i0", NOW, LEASE)                # re-poll: already ours
+    assert e1 == e2 == 1                                   # same epoch, not inflated
+    assert len(q.read_claim_log()) == before + 1          # only a heartbeat appended, not a new claim
 
 
 def test_heartbeater_refreshes_the_lease():
