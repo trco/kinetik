@@ -1,3 +1,3 @@
-from kontinuum.loop import main
+from kontinuum.cli import main
 
 main()
