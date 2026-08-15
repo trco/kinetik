@@ -27,7 +27,7 @@
   <text x="128" y="135" font-size="12" fill="#5f6368">paused? → skip this repo (an error skips the pass, never the daemon)</text>
 
   <rect x="110" y="152" width="400" height="46" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>
-  <text x="128" y="172" font-size="14" font-weight="700" fill="#202124">2 · maintain_prs (non-blocking)</text>
+  <text x="128" y="172" font-size="14" font-weight="700" fill="#202124">2 · reconcile_open_prs (non-blocking)</text>
   <text x="128" y="189" font-size="12" fill="#5f6368">a PR that went red on CI or was closed unmerged → blocked</text>
 
   <rect x="110" y="206" width="400" height="46" rx="8" fill="#e6f4ea" stroke="#34a853" stroke-width="1.5"/>

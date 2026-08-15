@@ -1,7 +1,7 @@
 """The poll loop: poll ready -> claim -> execute, honoring the human `hold` guard (§7, §10).
 
-`handle_issue` is the tested decision; `make_executor` builds the real clone -> sandbox -> propose
--> PR executor; `poll_ready`/`issue_labels`/`main` are thin `gh` glue.
+`claim_and_run` is the tested decision; `build_executor` builds the real clone -> sandbox -> propose
+-> PR executor; `poll_workable`/`issue_labels`/`main` are thin `gh` glue.
 """
 
 from __future__ import annotations
@@ -20,14 +20,14 @@ from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
 from kontinuum.pipeline import Task, propose
-from kontinuum.protocol import assert_owner, attempt_claim, heartbeat, release_if_mine
+from kontinuum.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
 from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
 
 CACHE_DIR = os.path.expanduser("~/.kontinuum/cache")
 
 
-class Heartbeater:
+class LeaseHeartbeat:
     """Refreshes the claim lease in the background while a task runs (§7), so a long task can't lose it."""
 
     def __init__(self, queue, me: str, epoch: int, lease: timedelta, interval: float | None = None):
@@ -55,14 +55,14 @@ HOLD_LABEL = "kontinuum:hold"
 STOP_LABELS = ("kontinuum:hold", "kontinuum:blocked")   # a human/other pass told us to stop
 
 
-def handle_issue(queue, me: str, now: datetime, lease: timedelta, labels: list[str], execute) -> str:
+def claim_and_run(queue, me: str, now: datetime, lease: timedelta, labels: list[str], execute) -> str:
     """Decide and act on one issue. Returns 'hold' | 'executed' | 'skip'."""
     if HOLD_LABEL in labels:
         release_if_mine(queue, me, now)              # human forcibly reclaimed -> back off
         return "hold"
     epoch = attempt_claim(queue, me, now, lease)     # the exact epoch we won, or None
     if epoch is not None:
-        with Heartbeater(queue, me, epoch, lease):   # keep the lease alive for the whole task
+        with LeaseHeartbeat(queue, me, epoch, lease):   # keep the lease alive for the whole task
             result = execute(queue, me)
         return "executed" if result else "bailed"    # bailed (hold/lost/blocked) -> pass moves on
     return "skip"
@@ -72,7 +72,7 @@ def _default_branch(repo: str) -> str:
     return gh("repo", "view", repo, "--json", "defaultBranchRef", "--jq", ".defaultBranchRef.name").strip()
 
 
-def _cache(repo: str) -> str:
+def _ensure_clone(repo: str) -> str:
     """One local clone per repo, kept up to date — reused across tasks instead of re-cloning."""
     path = os.path.join(CACHE_DIR, repo.replace("/", "__"))
     if os.path.isdir(path):
@@ -83,9 +83,9 @@ def _cache(repo: str) -> str:
     return path
 
 
-def _worktree(repo: str, base: str) -> tuple[str, str]:
+def _new_worktree(repo: str, base: str) -> tuple[str, str]:
     """A fresh, isolated worktree off the latest base — no re-download, never touches your checkout."""
-    cache = _cache(repo)
+    cache = _ensure_clone(repo)
     workdir = os.path.join(tempfile.mkdtemp(prefix="kontinuum-wt-"), "wt")
     git(cache, "worktree", "add", "--quiet", "--force", "--detach", workdir, f"origin/{base}")
     return workdir, cache
@@ -96,13 +96,13 @@ def _remove_worktree(cache: str, workdir: str) -> None:
     shutil.rmtree(os.path.dirname(workdir), ignore_errors=True)
 
 
-def _untracked(workdir: str) -> set[str]:
+def _untracked_paths(workdir: str) -> set[str]:
     # -z = NUL-separated, unquoted -> handles paths with spaces/special chars
     out = git(workdir, "status", "--porcelain", "-z", "--untracked-files=normal")
     return {e[3:] for e in out.split("\0") if e.startswith("?? ")}
 
 
-def _exclude_file(workdir: str) -> str:
+def _git_exclude_path(workdir: str) -> str:
     # in a worktree, workdir/.git is a FILE; ask git for the real (shared) exclude path
     p = git(workdir, "rev-parse", "--git-path", "info/exclude").strip()
     return p if os.path.isabs(p) else os.path.join(workdir, p)
@@ -117,39 +117,39 @@ class DemoAgent:
         return f"Demo change for #{task.number}."
 
 
-def _existing_pr(repo: str, branch: str) -> str | None:
+def _find_open_pr(repo: str, branch: str) -> str | None:
     out = gh("pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "url", "--jq", ".[].url")
     lines = [line for line in out.splitlines() if line.strip()]
     return lines[0] if lines else None
 
 
-def make_executor(agent, reviewer=None):
+def build_executor(agent, reviewer=None):
     """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
     def execute(queue, me):
         branch = f"kontinuum/issue-{queue.number}"
-        existing = _existing_pr(queue.repo, branch)      # crash-retry: PR already open -> idempotent, don't redo
+        existing = _find_open_pr(queue.repo, branch)      # crash-retry: PR already open -> idempotent, don't redo
         if existing:
             queue.set_label("pr-open")
             return existing
         now = datetime.utcnow()                          # early §7 guard: bail before any expensive work
-        if any(l in queue.labels() for l in STOP_LABELS) or not assert_owner(queue, me, now):
+        if any(l in queue.labels() for l in STOP_LABELS) or not still_owns(queue, me, now):
             release_if_mine(queue, me, now)
             return None
         base = _default_branch(queue.repo)
-        workdir, cache = _worktree(queue.repo, base)
+        workdir, cache = _new_worktree(queue.repo, base)
         exclude_path = exclude_backup = None
         try:
             recipe = load_recipe(workdir)                # per-repo setup/gate/image
             if recipe.setup:                             # trusted install WITH network, before the isolated box
-                before = _untracked(workdir)
+                before = _untracked_paths(workdir)
                 r = Sandbox(recipe.image, workdir, "bridge").run("sh", "-c", recipe.setup)
                 if r.returncode != 0:                    # don't waste the agent on a broken environment
                     queue.set_label("blocked")
                     queue.comment(f"Kontinuum setup step failed (exit {r.returncode}):\n{(r.stdout + r.stderr)[-800:]}")
                     return None
-                new = _untracked(workdir) - before       # keep installed deps out of the diff/PR
+                new = _untracked_paths(workdir) - before       # keep installed deps out of the diff/PR
                 if new:
-                    exclude_path = _exclude_file(workdir)
+                    exclude_path = _git_exclude_path(workdir)
                     exclude_backup = open(exclude_path).read() if os.path.exists(exclude_path) else ""
                     with open(exclude_path, "a") as f:          # restored in finally -> no leak to other issues
                         f.write("\n".join(sorted(new)) + "\n")
@@ -161,13 +161,13 @@ def make_executor(agent, reviewer=None):
                 queue.set_label("blocked")
                 return None
             now = datetime.utcnow()                      # §7 guard: still ours + not stopped, before any effect
-            if any(l in issue_labels(queue.repo, queue.number) for l in STOP_LABELS) or not assert_owner(queue, me, now):
+            if any(l in issue_labels(queue.repo, queue.number) for l in STOP_LABELS) or not still_owns(queue, me, now):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
             body = f"Closes #{queue.number}\n\n{proposal.pr_body}"   # Closes #N -> auto-closes the issue on merge
             url = open_pr(workdir, queue.repo, branch, f"Kontinuum: address #{queue.number}", body, base)
             queue.comment(f"Kontinuum opened {url}")
-            queue.set_label("pr-open")                    # CI is checked non-blocking in maintain_prs()
+            queue.set_label("pr-open")                    # CI is checked non-blocking in reconcile_open_prs()
             return url
         finally:
             if exclude_path is not None:                 # shared exclude is serial-safe -> restore, no cross-issue leak
@@ -177,7 +177,7 @@ def make_executor(agent, reviewer=None):
     return execute
 
 
-def _list_args(repo: str, label: str, assignee: str | None) -> list[str]:
+def _issue_list_args(repo: str, label: str, assignee: str | None) -> list[str]:
     args = ["issue", "list", "--repo", repo, "--label", label,
             "--state", "open", "--json", "number", "--jq", ".[].number"]
     if assignee:                                 # personal queue: only issues assigned to this user
@@ -185,12 +185,12 @@ def _list_args(repo: str, label: str, assignee: str | None) -> list[str]:
     return args
 
 
-def poll_ready(repo: str, assignee: str | None = None) -> list[int]:
+def poll_workable(repo: str, assignee: str | None = None) -> list[int]:
     """Issues to consider: ready (new work) + claimed (possibly-orphaned; attempt_claim reclaims if free)."""
     seen: set[int] = set()
     out: list[int] = []
     for label in ("kontinuum:ready", "kontinuum:claimed"):
-        for line in gh(*_list_args(repo, label, assignee)).splitlines():
+        for line in gh(*_issue_list_args(repo, label, assignee)).splitlines():
             if line.strip():
                 n = int(line)
                 if n not in seen:
@@ -199,7 +199,7 @@ def poll_ready(repo: str, assignee: str | None = None) -> list[int]:
     return out
 
 
-def maintain_prs(repo: str, bot_login: str) -> None:
+def reconcile_open_prs(repo: str, bot_login: str) -> None:
     """Non-blocking pass: block a pr-open issue whose PR went red on CI or was closed unmerged."""
     out = gh("issue", "list", "--repo", repo, "--label", "kontinuum:pr-open",
              "--state", "open", "--json", "number", "--jq", ".[].number")
@@ -234,7 +234,7 @@ def issue_labels(repo: str, number: int) -> list[str]:
 MAX_ERRORS = 3   # consecutive infra errors on one issue before we give up and block it
 
 
-def run_once(repo: str, me: str, lease: timedelta, bot_login: str, execute,
+def poll_once(repo: str, me: str, lease: timedelta, bot_login: str, execute,
              assignee: str | None = None, errors: dict | None = None):
     """One poll pass. Serial: claim and work at most one issue (§11), then return its number.
 
@@ -243,11 +243,11 @@ def run_once(repo: str, me: str, lease: timedelta, bot_login: str, execute,
     (owned by the daemon) tracks the consecutive-failure count per issue across passes.
     """
     errors = errors if errors is not None else {}
-    for n in poll_ready(repo, assignee):
+    for n in poll_workable(repo, assignee):
         q = GitHubIssueQueue(repo, n, bot_login)
         now = datetime.utcnow()                          # fresh clock per issue, not stale per pass
         try:
-            status = handle_issue(q, me, now, lease, issue_labels(repo, n), execute)
+            status = claim_and_run(q, me, now, lease, issue_labels(repo, n), execute)
             if status == "executed":                     # real work -> reset the error count and end the pass
                 errors.pop((repo, n), None)
                 return n
@@ -301,7 +301,7 @@ _ONBOARD_PROMPT = (
 def onboard(repo: str) -> None:
     """Propose a verify.yaml for a repo via a PR the human confirms (§4). No sandbox — edit-only."""
     base = _default_branch(repo)
-    workdir, cache = _worktree(repo, base)
+    workdir, cache = _new_worktree(repo, base)
     try:
         vpath = os.path.join(workdir, ".kontinuum", "verify.yaml")
         if os.path.exists(vpath):
@@ -364,9 +364,9 @@ def main(argv=None):
         "agent": args.agent, "repos": args.repos, "lease_min": args.lease_min, "poll_sec": args.poll_sec,
     })
     if cfg.agent == "claude":
-        executor = make_executor(ClaudeAgentRunner(), ClaudeReviewer())
+        executor = build_executor(ClaudeAgentRunner(), ClaudeReviewer())
     elif cfg.agent == "demo":
-        executor = make_executor(DemoAgent())
+        executor = build_executor(DemoAgent())
     else:                                                 # the stub never advances an issue -> would re-claim forever
         raise SystemExit("kontinuum run: set `agent: claude` in the config (or `demo` to exercise the pipeline)")
     for repo in cfg.repos:                                # ensure kontinuum:* labels exist before we set them
@@ -380,8 +380,8 @@ def main(argv=None):
                 if is_paused(repo):                        # kill switch: kontinuum:paused halts this repo
                     print(f"[{stamp}] {repo}: paused")
                     continue
-                maintain_prs(repo, cfg.bot_login)          # non-blocking: red CI on open PRs -> blocked
-                did = run_once(repo, cfg.instance_id, lease, cfg.bot_login, executor, cfg.assignee, errors)
+                reconcile_open_prs(repo, cfg.bot_login)          # non-blocking: red CI on open PRs -> blocked
+                did = poll_once(repo, cfg.instance_id, lease, cfg.bot_login, executor, cfg.assignee, errors)
                 print(f"[{stamp}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
             except Exception as e:                         # a whole-repo failure skips the pass, never the daemon
                 print(f"[{stamp}] {repo}: pass error: {e}")

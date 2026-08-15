@@ -12,13 +12,13 @@ import json
 import subprocess
 from datetime import datetime
 
-from kontinuum.claim import ClaimEntry, Kind
+from kontinuum.claim import ClaimEntry, ClaimKind
 
 MARKER = "kontinuum-claim"
 STATE_LABELS = ("ready", "claimed", "pr-open", "blocked", "needs-triage")   # mutually-exclusive projection
 
 
-def format_marker(kind: Kind, owner: str, epoch: int, lease_until: datetime) -> str:
+def format_marker(kind: ClaimKind, owner: str, epoch: int, lease_until: datetime) -> str:
     # ponytail: lease_until is naive UTC by convention — every instance must use UTC.
     # Make it tz-aware if that ever stops being guaranteed.
     payload = {"kind": kind.value, "owner": owner, "epoch": epoch, "lease_until": lease_until.isoformat()}
@@ -32,7 +32,7 @@ def parse_marker(comment_id: int, body: str) -> ClaimEntry | None:
     try:
         payload = body.split(MARKER, 1)[1].rsplit("-->", 1)[0].strip()   # JSON between the marker and -->
         data = json.loads(payload)                        # values may contain braces; json.loads handles it
-        return ClaimEntry(comment_id, Kind(data["kind"]), data["owner"],
+        return ClaimEntry(comment_id, ClaimKind(data["kind"]), data["owner"],
                           int(data["epoch"]), datetime.fromisoformat(data["lease_until"]))
     except (ValueError, KeyError):
         return None
@@ -85,7 +85,7 @@ class GitHubIssueQueue:
         comments = [json.loads(line) for line in out.splitlines() if line.strip()]
         return parse_claim_log(comments, self.bot_login)
 
-    def append(self, kind: Kind, owner: str, epoch: int, lease_until: datetime) -> None:
+    def append_entry(self, kind: ClaimKind, owner: str, epoch: int, lease_until: datetime) -> None:
         body = format_marker(kind, owner, epoch, lease_until)
         gh("api", f"repos/{self.repo}/issues/{self.number}/comments", "-f", f"body={body}")
 
@@ -96,7 +96,7 @@ class GitHubIssueQueue:
     def set_label(self, label: str) -> None:
         """Set the exclusive state label: add it and remove any OTHER kontinuum state label.
 
-        Without this, `ready` is never cleared and poll_ready keeps re-selecting a worked issue.
+        Without this, `ready` is never cleared and poll_workable keeps re-selecting a worked issue.
         """
         keep = f"kontinuum:{label}"
         remove = [l for l in self.labels()

@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from kontinuum.claim import Kind, max_epoch, resolve_owner
-from kontinuum.loop import HOLD_LABEL, Heartbeater, _list_args, handle_issue
+from kontinuum.claim import ClaimKind, max_epoch, resolve_owner
+from kontinuum.loop import HOLD_LABEL, LeaseHeartbeat, _issue_list_args, claim_and_run
 from kontinuum.protocol import attempt_claim
 from tests.fakes import FakeIssueQueue
 
@@ -27,24 +27,24 @@ def _recorder():
 def test_claims_and_executes_a_ready_issue():
     q = FakeIssueQueue()
     execute, calls = _recorder()
-    assert handle_issue(q, "i0", NOW, LEASE, [], execute) == "executed"
+    assert claim_and_run(q, "i0", NOW, LEASE, [], execute) == "executed"
     assert len(calls) == 1
     assert resolve_owner(q.read_claim_log(), NOW) == "i0"
 
 
 def test_skips_an_issue_owned_by_another():
     q = FakeIssueQueue()
-    q.append(Kind.CLAIM, "other", 1, NOW + LEASE)          # someone else holds a live lease
+    q.append_entry(ClaimKind.CLAIM, "other", 1, NOW + LEASE)          # someone else holds a live lease
     execute, calls = _recorder()
-    assert handle_issue(q, "i0", NOW, LEASE, [], execute) == "skip"
+    assert claim_and_run(q, "i0", NOW, LEASE, [], execute) == "skip"
     assert calls == []
 
 
 def test_hold_makes_the_owner_release_and_not_execute():
     q = FakeIssueQueue()
-    q.append(Kind.CLAIM, "i0", 1, NOW + LEASE)             # i0 currently owns it
+    q.append_entry(ClaimKind.CLAIM, "i0", 1, NOW + LEASE)             # i0 currently owns it
     execute, calls = _recorder()
-    assert handle_issue(q, "i0", NOW, LEASE, [HOLD_LABEL], execute) == "hold"
+    assert claim_and_run(q, "i0", NOW, LEASE, [HOLD_LABEL], execute) == "hold"
     assert resolve_owner(q.read_claim_log(), NOW) is None  # released
     assert calls == []
 
@@ -52,14 +52,14 @@ def test_hold_makes_the_owner_release_and_not_execute():
 def test_hold_prevents_a_fresh_claim():
     q = FakeIssueQueue()
     execute, calls = _recorder()
-    assert handle_issue(q, "i0", NOW, LEASE, [HOLD_LABEL], execute) == "hold"
+    assert claim_and_run(q, "i0", NOW, LEASE, [HOLD_LABEL], execute) == "hold"
     assert resolve_owner(q.read_claim_log(), NOW) is None  # never claimed
     assert calls == []
 
 
 def test_bails_when_execute_does_nothing():
     q = FakeIssueQueue()
-    assert handle_issue(q, "i0", NOW, LEASE, [], lambda q, me: None) == "bailed"   # execute returned None
+    assert claim_and_run(q, "i0", NOW, LEASE, [], lambda q, me: None) == "bailed"   # execute returned None
 
 
 def test_reclaim_of_own_issue_does_not_inflate_epoch():
@@ -71,21 +71,21 @@ def test_reclaim_of_own_issue_does_not_inflate_epoch():
     assert len(q.read_claim_log()) == before + 1          # only a heartbeat appended, not a new claim
 
 
-def test_run_once_skips_a_bail_and_works_the_next(monkeypatch):
+def test_poll_once_skips_a_bail_and_works_the_next(monkeypatch):
     from kontinuum import loop
     qs = {1: FakeIssueQueue("r", 1), 2: FakeIssueQueue("r", 2)}
-    monkeypatch.setattr(loop, "poll_ready", lambda repo, assignee=None: [1, 2])
+    monkeypatch.setattr(loop, "poll_workable", lambda repo, assignee=None: [1, 2])
     monkeypatch.setattr(loop, "issue_labels", lambda repo, n: [])
     monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: qs[n])
-    worked = loop.run_once("r", "me", LEASE, "bot",
+    worked = loop.poll_once("r", "me", LEASE, "bot",
                            lambda q, me: None if q.number == 1 else "https://pr", None, {})
     assert worked == 2                                    # #1 bailed -> moved on and worked #2
 
 
-def test_run_once_blocks_only_after_repeated_errors(monkeypatch):
+def test_poll_once_blocks_only_after_repeated_errors(monkeypatch):
     from kontinuum import loop
     q = FakeIssueQueue("r", 1)
-    monkeypatch.setattr(loop, "poll_ready", lambda repo, assignee=None: [1])
+    monkeypatch.setattr(loop, "poll_workable", lambda repo, assignee=None: [1])
     monkeypatch.setattr(loop, "issue_labels", lambda repo, n: [])
     monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: q)
 
@@ -93,10 +93,10 @@ def test_run_once_blocks_only_after_repeated_errors(monkeypatch):
         raise RuntimeError("gh blip")
 
     errors: dict = {}
-    loop.run_once("r", "me", LEASE, "bot", boom, None, errors)
+    loop.poll_once("r", "me", LEASE, "bot", boom, None, errors)
     assert q.label != "blocked"                           # transient: released, not blocked yet
     for _ in range(loop.MAX_ERRORS):
-        loop.run_once("r", "me", LEASE, "bot", boom, None, errors)
+        loop.poll_once("r", "me", LEASE, "bot", boom, None, errors)
     assert q.label == "blocked"                           # blocked only after MAX_ERRORS
 
 
@@ -105,15 +105,15 @@ def test_heartbeater_refreshes_the_lease():
     attempt_claim(q, "i0", NOW, LEASE)
     epoch = max_epoch(q.read_claim_log())
     before = len(q.read_claim_log())
-    with Heartbeater(q, "i0", epoch, LEASE, interval=0.02):
+    with LeaseHeartbeat(q, "i0", epoch, LEASE, interval=0.02):
         time.sleep(0.12)
     assert len(q.read_claim_log()) > before               # background heartbeats were appended
 
 
 def test_shared_queue_has_no_assignee_filter():
-    assert "--assignee" not in _list_args("owner/repo", "kontinuum:ready", None)
+    assert "--assignee" not in _issue_list_args("owner/repo", "kontinuum:ready", None)
 
 
 def test_personal_queue_filters_by_assignee():
-    args = _list_args("owner/repo", "kontinuum:ready", "uros")
+    args = _issue_list_args("owner/repo", "kontinuum:ready", "uros")
     assert args[args.index("--assignee") + 1] == "uros"

@@ -156,8 +156,8 @@ resolve_owner(log, now):                                # FIRST claimer at the t
 
 - **Claim / reclaim** (`attempt_claim`): read the log; if someone holds a live lease → skip; if we already own it → refresh via a heartbeat (no epoch inflation); else append a claim at `max_epoch+1`, read back, and yield if a lower comment_id won the tie. Returns the won epoch.
 - **Heartbeat during the task:** a background thread refreshes the lease (~LEASE/3) for the whole run, so a long agent task can't lose the claim; crash ⇒ heartbeat stops ⇒ lease lapses ⇒ any K reclaims at `epoch+1`.
-- **Human guard:** before every effect, `assert_owner` (= `resolve_owner == me`) **and** the `hold`/`blocked` label are re-checked; if either says stop, K releases and opens no PR.
-- **Recovery:** `poll_ready` returns `ready` **and** `claimed` issues, so a crashed-mid-task `claimed` issue is re-picked once its lease lapses.
+- **Human guard:** before every effect, `still_owns` (= `resolve_owner == me`) **and** the `hold`/`blocked` label are re-checked; if either says stop, K releases and opens no PR.
+- **Recovery:** `poll_workable` returns `ready` **and** `claimed` issues, so a crashed-mid-task `claimed` issue is re-picked once its lease lapses.
 - Labels (`ready|claimed|pr-open|blocked|needs-triage|hold|paused`) are bootstrapped by `kontinuum init-labels` (run automatically at `run` startup).
 
 ---
@@ -196,7 +196,7 @@ heavy e2e to the repo's existing CI**.
 | **e2e / full stack** | slow / needs real env | **existing CI on the pushed branch** | K reads CI status each pass, non-blocking |
 
 - **Deps offline:** the box has no network, so the gate must run offline. An optional **`setup`** step runs *with* network *before* the isolated agent, installing deps into the worktree (kept out of the diff); or bake deps into `image`. (The old tiered L0–L3 model collapsed to one gate + CI.)
-- **CI:** `maintain_prs` reads each open PR's rollup: red CI **or** a human-closed-unmerged PR → the issue is marked `blocked`. Green → the human merges.
+- **CI:** `reconcile_open_prs` reads each open PR's rollup: red CI **or** a human-closed-unmerged PR → the issue is marked `blocked`. Green → the human merges.
 - **No per-type evidence** yet — the gate is a single command. A `fix`-must-prove-itself check is §16 Later.
 
 ---
@@ -204,7 +204,7 @@ heavy e2e to the repo's existing CI**.
 ## 10. Task Execution Pipeline (per issue)
 
 ```
-handle_issue:
+claim_and_run:
   claim (epoch+lease); start a background HEARTBEAT for the whole task
   execute():
     if a PR already exists for this branch -> reuse it (idempotent); done
@@ -221,7 +221,7 @@ handle_issue:
     guard again (hold/blocked/owner) before any effect
     open PR (commit detached HEAD, force-push, gh pr create)
       -> comment issue -> set pr-open
-  later passes: maintain_prs reads CI -> red/closed => blocked; green => human merges
+  later passes: reconcile_open_prs reads CI -> red/closed => blocked; green => human merges
 ```
 
 - **Reviewer honesty:** two LLMs share blind spots — the reviewer is *one input*, not the trust anchor; the real anchors are the objective gate, CI, and human PR review. One reviewer in MVP; N-diverse is §16.
@@ -249,15 +249,15 @@ handle_issue:
 | Agent/K crash mid-task | heartbeat stops → lease lapses | issue stays `claimed`, re-polled + reclaimed at `epoch+1` |
 | Gate/reviewer reject | gate exit / verdict | feedback → retry ≤3, oscillation → `blocked` |
 | Secret in diff | `scan_diff` | feedback → retry; never pushed |
-| Lost claim / human hold | `assert_owner` + label re-check | abort before effects, release cleanly |
+| Lost claim / human hold | `still_owns` + label re-check | abort before effects, release cleanly |
 | Transient infra error (gh/git/docker) | exception | release + retry next pass; `blocked` after 3 |
-| PR CI red / closed unmerged | `maintain_prs` | `blocked` + comment |
+| PR CI red / closed unmerged | `reconcile_open_prs` | `blocked` + comment |
 
 ---
 
 ## 12. Reliability & Recovery
 
-- **Single ownership authority:** the GitHub claim log is the *only* source of truth; there is no local DB to reconcile. Every ownership decision re-reads the log (`assert_owner`).
+- **Single ownership authority:** the GitHub claim log is the *only* source of truth; there is no local DB to reconcile. Every ownership decision re-reads the log (`still_owns`).
 - **Idempotent effects:** before opening a PR, check for an existing PR on the branch and reuse it; `open_pr` force-pushes a detached commit so a re-run never collides on a leaked local branch.
 - **Crash recovery is free:** K holds no durable state; on restart it re-polls, and the lease mechanism hands orphaned `claimed` issues to whoever's alive.
 - **Daemon resilience:** each issue is wrapped (error → release, `blocked` after 3) and each repo pass is wrapped, so one failure never takes down the loop.
@@ -346,7 +346,7 @@ Each item is a real feature cut from the first loop. Build it when its trigger f
 ## 17. Testing Kontinuum Itself
 
 - **Property tests on claiming** (`test_claim.py`, Hypothesis): randomized interleavings assert **single-owner** — this is how the first-claimer-wins tie-break was found and fixed.
-- **Protocol/loop tests** (`test_protocol.py`, `test_loop.py`): claim/skip/reclaim, heartbeat, guards, `run_once` (bail → move on, block only after repeated errors).
+- **Protocol/loop tests** (`test_protocol.py`, `test_loop.py`): claim/skip/reclaim, heartbeat, guards, `poll_once` (bail → move on, block only after repeated errors).
 - **Docker-gated tests** (`test_sandbox.py`, `test_pipeline.py`): sandbox isolation (no host env, no egress, worktree writes) and the pipeline end-to-end with a fake agent.
 - **Marker/CI/config/recipe unit tests**.
 - Verified live end-to-end (real Claude agent → real PR) and a **two-issue soak** (the queue advances). **Deferred:** a `kill -9` chaos suite and a multi-instance soak (§16 / validation).
@@ -386,7 +386,7 @@ PR rebase-on-drift; merge/deploy autonomy; parallel execution; web dashboard.
 
 - [x] **0 · Stage-0 spike** — verify.yaml gate stood up; CI-for-e2e confirmed.
 - [x] **1 · Skeleton loop + sim harness** — poll/claim loop; Hypothesis property scaffolding. *(state.db intentionally dropped.)*
-- [x] **2 · Claim log + human guard** — epoch-lease + heartbeat + `assert_owner`/`hold`; single-owner property-tested. *(2-instance week-long soak: not run.)*
+- [x] **2 · Claim log + human guard** — epoch-lease + heartbeat + `still_owns`/`hold`; single-owner property-tested. *(2-instance week-long soak: not run.)*
 - [x] **3 · Sandbox + effect boundary** — credential-free `--network none` box; writes orchestrator-side; secret-scan. *(egress-allowlist proxy → §16.)*
 - [x] **4 · Onboarding** — `kontinuum onboard` proposes a `verify.yaml` via PR. *(CURRENT_STATE/Surveyor → §16.)*
 - [x] **5 · Happy-path pipeline** — agent → gate → PR → CI, proven live.

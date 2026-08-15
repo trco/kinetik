@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from kontinuum.claim import Kind, max_epoch, plan_claim, resolve_owner, won_claim
+from kontinuum.claim import ClaimKind, max_epoch, plan_claim, resolve_owner, owns
 
 
 def attempt_claim(queue, me: str, now: datetime, lease: timedelta) -> int | None:
@@ -22,22 +22,22 @@ def attempt_claim(queue, me: str, now: datetime, lease: timedelta) -> int | None
     plan = plan_claim(log, me, now)
     if plan.skip:                                          # someone holds a live lease
         return None
-    queue.append(Kind.CLAIM, me, plan.epoch, now + lease)
-    if won_claim(queue.read_claim_log(), me, now):         # read-back breaks same-tick ties
+    queue.append_entry(ClaimKind.CLAIM, me, plan.epoch, now + lease)
+    if owns(queue.read_claim_log(), me, now):         # read-back breaks same-tick ties
         queue.set_label("claimed")
         return plan.epoch                                  # the exact epoch we own -> heartbeat at this
-    queue.append(Kind.RELEASE, me, plan.epoch, now + lease)  # lost the tie — yield cleanly
+    queue.append_entry(ClaimKind.RELEASE, me, plan.epoch, now + lease)  # lost the tie — yield cleanly
     return None
 
 
 def heartbeat(queue, me: str, epoch: int, now: datetime, lease: timedelta) -> None:
     """Extend our lease at the same epoch. The owner calls this every ~LEASE/3."""
-    queue.append(Kind.HEARTBEAT, me, epoch, now + lease)
+    queue.append_entry(ClaimKind.HEARTBEAT, me, epoch, now + lease)
 
 
-def assert_owner(queue, me: str, now: datetime) -> bool:
+def still_owns(queue, me: str, now: datetime) -> bool:
     """Guard called before every state transition and effect (§7). False ⇒ abort."""
-    return won_claim(queue.read_claim_log(), me, now)   # both are "resolve_owner == me"
+    return owns(queue.read_claim_log(), me, now)   # both are "resolve_owner == me"
 
 
 def release_if_mine(queue, me: str, now: datetime) -> bool:
@@ -45,5 +45,5 @@ def release_if_mine(queue, me: str, now: datetime) -> bool:
     log = queue.read_claim_log()
     if resolve_owner(log, now) != me:
         return False
-    queue.append(Kind.RELEASE, me, max_epoch(log), now)   # release ignores lease_until
+    queue.append_entry(ClaimKind.RELEASE, me, max_epoch(log), now)   # release ignores lease_until
     return True

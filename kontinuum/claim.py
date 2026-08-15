@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 
 
-class Kind(str, Enum):
+class ClaimKind(str, Enum):
     CLAIM = "claim"
     HEARTBEAT = "heartbeat"
     RELEASE = "release"
@@ -21,7 +21,7 @@ class Kind(str, Enum):
 @dataclass(frozen=True)
 class ClaimEntry:
     comment_id: int      # GitHub comment id: monotonic, same total order for every reader
-    kind: Kind
+    kind: ClaimKind
     owner: str           # instance_id, e.g. "kontinuum/uros@laptop"
     epoch: int
     lease_until: datetime
@@ -40,15 +40,15 @@ def resolve_owner(log: list[ClaimEntry], now: datetime) -> str | None:
     release would let a tie-loser release the winner and starve the issue).
     """
     entries = sorted(log, key=lambda e: e.comment_id)
-    live = [m for m in entries if m.kind in (Kind.CLAIM, Kind.HEARTBEAT)]
+    live = [m for m in entries if m.kind in (ClaimKind.CLAIM, ClaimKind.HEARTBEAT)]
     if not live:
         return None
     epoch = max(m.epoch for m in live)
-    claims = [m for m in entries if m.epoch == epoch and m.kind is Kind.CLAIM]
+    claims = [m for m in entries if m.epoch == epoch and m.kind is ClaimKind.CLAIM]
     if not claims:
         return None
     winner = claims[0].owner
-    if any(m.kind is Kind.RELEASE and m.epoch == epoch and m.owner == winner for m in entries):
+    if any(m.kind is ClaimKind.RELEASE and m.epoch == epoch and m.owner == winner for m in entries):
         return None
     lease_until = max(m.lease_until for m in live if m.epoch == epoch and m.owner == winner)
     return winner if lease_until > now else None
@@ -68,6 +68,6 @@ def plan_claim(log: list[ClaimEntry], me: str, now: datetime) -> ClaimPlan:
     return ClaimPlan(skip=False, epoch=max_epoch(log) + 1)
 
 
-def won_claim(log_after_readback: list[ClaimEntry], me: str, now: datetime) -> bool:
+def owns(log_after_readback: list[ClaimEntry], me: str, now: datetime) -> bool:
     """After appending my claim and re-reading, did I win (read-back breaks same-tick ties)?"""
     return resolve_owner(log_after_readback, now) == me

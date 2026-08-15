@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from kontinuum.claim import Kind, resolve_owner
-from kontinuum.protocol import assert_owner, attempt_claim, heartbeat, release_if_mine
+from kontinuum.claim import ClaimKind, resolve_owner
+from kontinuum.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
 from tests.fakes import FakeIssueQueue
 
 NOW = datetime(2026, 8, 13, 12, 0, 0)
@@ -45,10 +45,10 @@ def test_heartbeat_keeps_ownership_past_original_lease():
 
 def test_assert_owner_reflects_the_log():
     q = FakeIssueQueue()
-    assert assert_owner(q, "i0", NOW) is False             # nobody owns it
+    assert still_owns(q, "i0", NOW) is False             # nobody owns it
     attempt_claim(q, "i0", NOW, LEASE)
-    assert assert_owner(q, "i0", NOW) is True
-    assert assert_owner(q, "i1", NOW) is False             # not the owner
+    assert still_owns(q, "i0", NOW) is True
+    assert still_owns(q, "i1", NOW) is False             # not the owner
 
 
 def test_release_if_mine_frees_only_my_claim():
