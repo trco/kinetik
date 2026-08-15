@@ -76,7 +76,6 @@ def test_poll_once_skips_a_bail_and_works_the_next(monkeypatch):
     from kontinuum import loop
     qs = {1: FakeIssueQueue("r", 1), 2: FakeIssueQueue("r", 2)}
     monkeypatch.setattr(loop, "poll_workable", lambda repo, assignee=None: [1, 2])
-    monkeypatch.setattr(loop, "issue_labels", lambda repo, n: [])
     monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: qs[n])
     worked = loop.poll_once("r", "me", LEASE, "bot",
                            lambda q, me: None if q.number == 1 else "https://pr", None, {})
@@ -87,7 +86,6 @@ def test_poll_once_blocks_only_after_repeated_errors(monkeypatch):
     from kontinuum import loop
     q = FakeIssueQueue("r", 1)
     monkeypatch.setattr(loop, "poll_workable", lambda repo, assignee=None: [1])
-    monkeypatch.setattr(loop, "issue_labels", lambda repo, n: [])
     monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: q)
 
     def boom(qq, me):

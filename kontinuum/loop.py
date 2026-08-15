@@ -1,7 +1,7 @@
 """The poll loop: poll ready -> claim -> execute, honoring the human `hold` guard (§7, §10).
 
 `claim_and_run` is the tested decision; `build_executor` builds the real clone -> sandbox -> propose
--> PR executor; `poll_workable`/`issue_labels`/`main` are thin `gh` glue.
+-> PR executor; `poll_workable`/`main` are thin `gh` glue.
 """
 
 from __future__ import annotations
@@ -172,7 +172,7 @@ def build_executor(agent, reviewer=None):
                 queue.set_label("blocked")
                 return None
             now = datetime.utcnow()                      # §7 guard: still ours + not stopped, before any effect
-            if any(l in issue_labels(queue.repo, queue.number) for l in STOP_LABELS) or not still_owns(queue, me, now):
+            if any(l in queue.labels() for l in STOP_LABELS) or not still_owns(queue, me, now):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
             body = pr_body(queue.number, proposal, reviewed=reviewer is not None)
@@ -238,11 +238,6 @@ def reconcile_open_prs(repo: str, bot_login: str) -> None:
             logger.warning("#%d: could not block: %s", n, e)
 
 
-def issue_labels(repo: str, number: int) -> list[str]:
-    out = gh("issue", "view", str(number), "--repo", repo, "--json", "labels", "--jq", ".labels[].name")
-    return [line for line in out.splitlines() if line.strip()]
-
-
 MAX_ERRORS = 3   # consecutive infra errors on one issue before we give up and block it
 
 
@@ -259,7 +254,7 @@ def poll_once(repo: str, me: str, lease: timedelta, bot_login: str, execute,
         q = GitHubIssueQueue(repo, n, bot_login)
         now = datetime.utcnow()                          # fresh clock per issue, not stale per pass
         try:
-            status = claim_and_run(q, me, now, lease, issue_labels(repo, n), execute)
+            status = claim_and_run(q, me, now, lease, q.labels(), execute)
             if status == "executed":                     # real work -> reset the error count and end the pass
                 errors.pop((repo, n), None)
                 return n
