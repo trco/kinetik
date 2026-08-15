@@ -15,6 +15,7 @@ from kontinuum.loop import (
     onboard,
     poll_once,
     reconcile_open_prs,
+    seed_docs_pr,
     status,
 )
 
@@ -42,6 +43,8 @@ def main(argv=None):
     il.add_argument("--repo", required=True)
     ob = sub.add_parser("onboard", help="propose a verify.yaml for a repo via a PR")
     ob.add_argument("--repo", required=True)
+    sd = sub.add_parser("seed-docs", help="survey a repo and open a PR adding its living docs")
+    sd.add_argument("--repo", required=True)
     stt = sub.add_parser("status", help="show what K owns / is working / blocked (read-only)")
     stt.add_argument("--config", default=None)
     args = p.parse_args(argv)
@@ -51,6 +54,9 @@ def main(argv=None):
         return
     if args.cmd == "onboard":
         onboard(args.repo)
+        return
+    if args.cmd == "seed-docs":
+        seed_docs_pr(args.repo, ClaudeAgentRunner())
         return
     if args.cmd == "status":
         for repo in load_config(args.config).repos:
