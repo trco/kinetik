@@ -6,8 +6,10 @@ runs a real Claude coding agent whose *commands* are confined to a credential-fr
 sandbox, verifies the result with a fast local gate plus the repo's existing CI, and opens a pull
 request for a human to merge. GitHub issues are the only queue; you keep the merge button.
 
-Depth lives in the design docs: [`kontinuum-spec.md`](kontinuum-spec.md) (the vision) and
-[`kontinuum-mvp.md`](kontinuum-mvp.md) (the as-built system).
+![How Kontinuum works](docs/kontinuum-overview.svg)
+
+Depth lives in the design docs: [`kontinuum-spec.md`](docs/kontinuum-spec.md) (the vision) and
+[`kontinuum-mvp.md`](docs/kontinuum-mvp.md) (the as-built system).
 
 ## Prerequisites
 
