@@ -13,11 +13,13 @@ import subprocess
 import threading
 from datetime import datetime, timedelta
 
+from kontinuum.agent import ClaudeAgentRunner
 from kontinuum.ci import summarize_checks
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh
+from kontinuum.livingdocs import has_living_docs, maintain as maintain_living_docs, seed as seed_living_docs
 from kontinuum.pipeline import Task, propose
-from kontinuum.plugins import inject
+from kontinuum.plugins import inject, injected
 from kontinuum.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
 from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
@@ -141,6 +143,7 @@ def build_executor(agent, reviewer=None):
             if any(l in queue.labels() for l in STOP_LABELS) or not still_owns(queue, me, now):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
+            maintain_living_docs(agent, workdir)         # best-effort: doc updates ride in this same PR
             body = pr_body(queue.number, proposal, reviewed=reviewer is not None)
             url = open_pr(workdir, queue.repo, branch, f"{task.title} (#{queue.number})", body, base)
             queue.comment(f"Kontinuum opened {url}")
@@ -272,7 +275,7 @@ _ONBOARD_PROMPT = (
 
 
 def onboard(repo: str) -> None:
-    """Propose a verify.yaml for a repo via a PR the human confirms (§4). No sandbox — edit-only."""
+    """Propose a verify.yaml + an initial living-docs set for a repo via one PR the human confirms (§4)."""
     base = _default_branch(repo)
     workdir, cache = _new_worktree(repo, base)
     try:
@@ -287,10 +290,35 @@ def onboard(repo: str) -> None:
         if not os.path.exists(vpath):
             logger.error("%s: agent did not produce verify.yaml — rerun or write it by hand", repo)
             return
-        url = open_pr(workdir, repo, "kontinuum/onboarding",
-                      "Kontinuum: onboarding — add verify.yaml",
-                      "Proposed Kontinuum test recipe (image + gate). Review it, then merge to enable Kontinuum here.",
-                      base)
+        with injected(workdir):                          # plugin available for /docs-seed; excluded from the PR
+            seed_living_docs(ClaudeAgentRunner(), workdir)   # also draft an initial living-docs set (best-effort)
+            url = open_pr(workdir, repo, "kontinuum/onboarding",
+                          "Kontinuum: onboarding — verify.yaml + living docs",
+                          "Proposed test recipe (image + gate) and an initial living-docs survey. "
+                          "Review and prune, then merge to enable Kontinuum here.",
+                          base)
         logger.info("%s: onboarding PR %s", repo, url)
+    finally:
+        _remove_worktree(cache, workdir)
+
+
+def seed_docs_pr(repo: str, agent) -> str | None:
+    """Survey a repo and open a PR adding its initial living docs (§16.1). Skips if they already exist."""
+    base = _default_branch(repo)
+    workdir, cache = _new_worktree(repo, base)
+    try:
+        if has_living_docs(workdir):
+            logger.info("%s: living docs already exist — nothing to seed", repo)
+            return None
+        with injected(workdir):                          # plugin available for /docs-seed; excluded from the PR
+            if not seed_living_docs(agent, workdir):
+                logger.error("%s: agent produced no living docs — rerun", repo)
+                return None
+            url = open_pr(workdir, repo, "kontinuum/living-docs-seed",
+                          "Kontinuum: seed living docs",
+                          "Initial living-docs survey (subsystems / flows / adr). Review and prune, then merge.",
+                          base)
+        logger.info("%s: living-docs seed PR %s", repo, url)
+        return url
     finally:
         _remove_worktree(cache, workdir)

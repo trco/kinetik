@@ -118,6 +118,22 @@ class ClaudeAgentRunner:
         finally:
             sandbox.stop()
 
+    def run_command(self, workdir: str, command: str) -> None:
+        """Optional capability: run an injected slash command headless in the worktree (Read/Edit/Write).
+
+        Drives the living-docs plugin (`/docs-update`, `/docs-seed`) — the prompt lives in the bundled
+        command file, not here. A docs-only pass: no commands to run, so no sandbox/MCP; no Bash, since
+        K owns git and passes any paths in the command's arguments. Best-effort: a timeout is swallowed
+        by the caller, which never lets docs block the code PR.
+        """
+        try:
+            subprocess.run(
+                ["claude", "-p", command, "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep",
+                 "--disallowedTools", "Bash", "--permission-mode", "acceptEdits"],
+                cwd=workdir, capture_output=True, text=True, timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            pass                                          # best-effort; the caller continues
+
 
 class ClaudeReviewer:
     """`Reviewer` over the CLI: independent, read-only. One input, not the trust anchor (§10)."""
