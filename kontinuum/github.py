@@ -30,7 +30,9 @@ def parse_marker(comment_id: int, body: str) -> ClaimEntry | None:
     if MARKER not in body:
         return None
     try:
-        data = json.loads(body[body.index("{"): body.rindex("}") + 1])
+        start = body.index("{")
+        end = body.index("}", start)                      # first close brace (payload is flat) -> ignore trailing text
+        data = json.loads(body[start:end + 1])
         return ClaimEntry(comment_id, Kind(data["kind"]), data["owner"],
                           int(data["epoch"]), datetime.fromisoformat(data["lease_until"]))
     except (ValueError, KeyError):

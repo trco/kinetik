@@ -71,6 +71,35 @@ def test_reclaim_of_own_issue_does_not_inflate_epoch():
     assert len(q.read_claim_log()) == before + 1          # only a heartbeat appended, not a new claim
 
 
+def test_run_once_skips_a_bail_and_works_the_next(monkeypatch):
+    from kontinuum import loop
+    qs = {1: FakeIssueQueue("r", 1), 2: FakeIssueQueue("r", 2)}
+    monkeypatch.setattr(loop, "poll_ready", lambda repo, assignee=None: [1, 2])
+    monkeypatch.setattr(loop, "issue_labels", lambda repo, n: [])
+    monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: qs[n])
+    worked = loop.run_once("r", "me", LEASE, "bot", None,
+                           lambda q, me: None if q.number == 1 else "https://pr", {})
+    assert worked == 2                                    # #1 bailed -> moved on and worked #2
+
+
+def test_run_once_blocks_only_after_repeated_errors(monkeypatch):
+    from kontinuum import loop
+    q = FakeIssueQueue("r", 1)
+    monkeypatch.setattr(loop, "poll_ready", lambda repo, assignee=None: [1])
+    monkeypatch.setattr(loop, "issue_labels", lambda repo, n: [])
+    monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: q)
+
+    def boom(qq, me):
+        raise RuntimeError("gh blip")
+
+    errors: dict = {}
+    loop.run_once("r", "me", LEASE, "bot", None, boom, errors)
+    assert q.label != "blocked"                           # transient: released, not blocked yet
+    for _ in range(loop.MAX_ERRORS):
+        loop.run_once("r", "me", LEASE, "bot", None, boom, errors)
+    assert q.label == "blocked"                           # blocked only after MAX_ERRORS
+
+
 def test_heartbeater_refreshes_the_lease():
     q = FakeIssueQueue()
     attempt_claim(q, "i0", NOW, LEASE)

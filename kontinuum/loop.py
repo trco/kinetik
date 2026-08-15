@@ -103,8 +103,9 @@ def _remove_worktree(cache: str, workdir: str) -> None:
 
 
 def _untracked(workdir: str) -> set[str]:
-    out = git(workdir, "status", "--porcelain", "--untracked-files=normal")
-    return {line[3:] for line in out.splitlines() if line.startswith("?? ")}
+    # -z = NUL-separated, unquoted -> handles paths with spaces/special chars
+    out = git(workdir, "status", "--porcelain", "-z", "--untracked-files=normal")
+    return {e[3:] for e in out.split("\0") if e.startswith("?? ")}
 
 
 def _gitignore(workdir: str, paths: set[str]) -> None:
@@ -224,29 +225,40 @@ def issue_labels(repo: str, number: int) -> list[str]:
     return [line for line in out.splitlines() if line.strip()]
 
 
+MAX_ERRORS = 3   # consecutive infra errors on one issue before we give up and block it
+
+
 def run_once(repo: str, me: str, lease: timedelta, bot_login: str,
-             assignee: str | None = None, execute=execute):
+             assignee: str | None = None, execute=execute, errors: dict | None = None):
     """One poll pass. Serial: claim and work at most one issue (§11), then return its number.
 
-    A per-issue failure never kills the daemon: it's marked blocked, released, and the pass continues.
+    A per-issue failure never kills the daemon. A transient error releases the claim and retries
+    next pass; only after MAX_ERRORS consecutive failures is the issue blocked for a human. `errors`
+    (owned by the daemon) tracks the consecutive-failure count per issue across passes.
     """
+    errors = errors if errors is not None else {}
     for n in poll_ready(repo, assignee):
         q = GitHubIssueQueue(repo, n, bot_login)
         now = datetime.utcnow()                          # fresh clock per issue, not stale per pass
         try:
-            if handle_issue(q, me, now, lease, issue_labels(repo, n), execute) == "executed":
+            status = handle_issue(q, me, now, lease, issue_labels(repo, n), execute)
+            errors.pop((repo, n), None)                  # handled cleanly -> reset its error count
+            if status == "executed":
                 return n
         except Exception as e:
-            print(f"  #{n}: error, marking blocked: {e}")
+            errors[(repo, n)] = errors.get((repo, n), 0) + 1
+            attempts = errors[(repo, n)]
+            print(f"  #{n}: error {attempts}/{MAX_ERRORS}: {e}")
             try:
-                release_if_mine(q, me, datetime.utcnow())   # give up ownership FIRST, even if labeling fails
+                release_if_mine(q, me, datetime.utcnow())   # give up ownership FIRST so it can retry
             except Exception:
                 pass
-            try:
-                q.set_label("blocked")
-                q.comment(f"Kontinuum hit an error and stopped on this issue: {e}")
-            except Exception:
-                pass
+            if attempts >= MAX_ERRORS:                   # persistent failure -> block for a human
+                try:
+                    q.set_label("blocked")
+                    q.comment(f"Kontinuum failed {attempts}x and stopped on this issue: {e}")
+                except Exception:
+                    pass
     return None
 
 
@@ -353,6 +365,7 @@ def main(argv=None):
     else:
         executor = execute
     lease = timedelta(minutes=cfg.lease_min)
+    errors: dict = {}                                      # per-issue consecutive-error counts, across passes
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
         for repo in cfg.repos:                             # one K, several repos
             stamp = datetime.utcnow().strftime("%H:%M:%S")
@@ -361,7 +374,7 @@ def main(argv=None):
                     print(f"[{stamp}] {repo}: paused")
                     continue
                 maintain_prs(repo, cfg.bot_login)          # non-blocking: red CI on open PRs -> blocked
-                did = run_once(repo, cfg.instance_id, lease, cfg.bot_login, cfg.assignee, executor)
+                did = run_once(repo, cfg.instance_id, lease, cfg.bot_login, cfg.assignee, executor, errors)
                 print(f"[{stamp}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
             except Exception as e:                         # a whole-repo failure skips the pass, never the daemon
                 print(f"[{stamp}] {repo}: pass error: {e}")

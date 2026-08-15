@@ -27,12 +27,16 @@ TOOL = {
 }
 
 
-def _run(command: str) -> str:
+def _run(command: str):
+    """Return (text, is_error). is_error marks infra failures (not a normal non-zero command exit)."""
     if not CID:
-        return "error: sandbox container id not set (KONTINUUM_SANDBOX_CID missing)"
-    p = subprocess.run(["docker", "exec", "-w", "/work", CID, "sh", "-c", command],
-                       capture_output=True, text=True, timeout=600)
-    return f"exit={p.returncode}\n{p.stdout}{p.stderr}"
+        return "error: sandbox container id not set (KONTINUUM_SANDBOX_CID missing)", True
+    try:
+        p = subprocess.run(["docker", "exec", "-w", "/work", CID, "sh", "-c", command],
+                           capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        return "error: command timed out after 600s", True
+    return f"exit={p.returncode}\n{p.stdout}{p.stderr}", False
 
 
 def _handle(msg: dict):
@@ -45,7 +49,8 @@ def _handle(msg: dict):
         return {"tools": [TOOL]}
     if method == "tools/call":
         args = msg.get("params", {}).get("arguments", {})
-        return {"content": [{"type": "text", "text": _run(args.get("command", ""))}], "isError": False}
+        text, is_error = _run(args.get("command", ""))
+        return {"content": [{"type": "text", "text": text}], "isError": is_error}
     return {}   # ping / anything else: empty result
 
 
