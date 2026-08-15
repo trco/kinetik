@@ -16,12 +16,22 @@ from kontinuum.claim import ClaimEntry, ClaimKind
 MARKER = "kontinuum-claim"
 STATE_LABELS = ("ready", "claimed", "pr-open", "blocked", "needs-triage")   # mutually-exclusive projection
 
+# Human-readable line for the events worth seeing in the thread. Heartbeat is absent on
+# purpose: it renews every lease tick and would spam the issue.
+VISIBLE_TEXT = {
+    ClaimKind.CLAIM: "🤖 Kontinuum claimed this issue (lease until {lease:%H:%M} UTC)",
+    ClaimKind.RELEASE: "🤖 Kontinuum released this issue",
+}
+
 
 def format_marker(kind: ClaimKind, owner: str, epoch: int, lease_until: datetime) -> str:
     # ponytail: lease_until is naive UTC by convention — every instance must use UTC.
     # Make it tz-aware if that ever stops being guaranteed.
     payload = {"kind": kind.value, "owner": owner, "epoch": epoch, "lease_until": lease_until.isoformat()}
-    return f"<!-- {MARKER} {json.dumps(payload, separators=(',', ':'))} -->"
+    marker = f"<!-- {MARKER} {json.dumps(payload, separators=(',', ':'))} -->"
+    text = VISIBLE_TEXT.get(kind)
+    # Prefix only — parse_marker reads the JSON between MARKER and `-->`, so a suffix would break it.
+    return f"{text.format(lease=lease_until)}\n{marker}" if text else marker
 
 
 def parse_marker(comment_id: int, body: str) -> ClaimEntry | None:
