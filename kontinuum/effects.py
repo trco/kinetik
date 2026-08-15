@@ -39,16 +39,15 @@ def pr_body_text(issue: int, summary: str) -> str:
     return f"Closes #{issue}\n\n{summary}"
 
 
-def open_pr(workdir: str, repo: str, issue: int, summary: str, base: str, branch: str | None = None) -> str:
-    """Commit the worktree on a fresh branch, push it, open a PR. Returns the PR URL.
+def open_pr(workdir: str, repo: str, branch: str, title: str, body: str, base: str) -> str:
+    """Commit the worktree on `branch`, push it, open a PR. Returns the PR URL.
 
     All the credentialed writes live here — the sandboxed agent never reaches this.
     """
-    branch = branch or f"kontinuum/issue-{issue}"
     git(workdir, "checkout", "-b", branch)
     git(workdir, "add", "-A")
     git(workdir, "-c", "user.name=kontinuum-bot", "-c", "user.email=kontinuum@users.noreply.github.com",
-        "commit", "-m", f"Kontinuum: address #{issue}")   # self-authored, no reliance on global git config
+        "commit", "-m", title)                            # self-authored, no reliance on global git config
     git(workdir, "push", "-u", "origin", branch)
     return gh("pr", "create", "--repo", repo, "--base", base, "--head", branch,
-              "--title", f"Kontinuum: address #{issue}", "--body", pr_body_text(issue, summary)).strip()
+              "--title", title, "--body", body).strip()

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import threading
 from datetime import datetime, timedelta
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta
 from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
 from kontinuum.ci import ci_state
 from kontinuum.claim import max_epoch
-from kontinuum.effects import open_pr
+from kontinuum.effects import open_pr, pr_body_text
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
 from kontinuum.pipeline import Task, propose
@@ -110,9 +111,20 @@ class DemoAgent:
         return f"Demo change for #{task.number}."
 
 
+def _existing_pr(repo: str, branch: str) -> str | None:
+    out = gh("pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "url", "--jq", ".[].url")
+    lines = [line for line in out.splitlines() if line.strip()]
+    return lines[0] if lines else None
+
+
 def make_executor(agent, reviewer=None):
     """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
     def execute(queue, me):
+        branch = f"kontinuum/issue-{queue.number}"
+        existing = _existing_pr(queue.repo, branch)      # crash-retry: PR already open -> idempotent, don't redo
+        if existing:
+            queue.set_label("pr-open")
+            return existing
         base = _default_branch(queue.repo)
         workdir, cache = _worktree(queue.repo, base)
         try:
@@ -130,7 +142,8 @@ def make_executor(agent, reviewer=None):
             if HOLD_LABEL in issue_labels(queue.repo, queue.number) or not assert_owner(queue, me, now):
                 release_if_mine(queue, me, now)          # human hold or lost lease -> back off, open no PR
                 return None
-            url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, base)
+            url = open_pr(workdir, queue.repo, branch, f"Kontinuum: address #{queue.number}",
+                          pr_body_text(queue.number, proposal.pr_body), base)
             queue.comment(f"Kontinuum opened {url}")
             queue.set_label("pr-open")                    # CI is checked non-blocking in maintain_prs()
             return url
@@ -184,6 +197,61 @@ def run_once(repo: str, me: str, now: datetime, lease: timedelta, bot_login: str
     return None
 
 
+def is_paused(repo: str) -> bool:
+    """Kill switch (§4): any open issue labelled kontinuum:paused halts K on this repo."""
+    out = gh("issue", "list", "--repo", repo, "--label", "kontinuum:paused",
+             "--state", "open", "--json", "number", "--jq", ".[].number")
+    return bool(out.strip())
+
+
+def status(repo: str) -> None:
+    """Read-only: what K owns / is working / blocked on this repo (from GitHub, no local state)."""
+    print(repo + (" [PAUSED]" if is_paused(repo) else ""))
+    for label in ("ready", "claimed", "pr-open", "blocked", "hold", "needs-triage"):
+        out = gh("issue", "list", "--repo", repo, "--label", f"kontinuum:{label}", "--state", "open",
+                 "--json", "number,title", "--jq", '.[] | "    #\\(.number) \\(.title)"')
+        lines = [line for line in out.splitlines() if line.strip()]
+        if lines:
+            print(f"  {label} ({len(lines)}):")
+            print("\n".join(lines))
+
+
+_ONBOARD_PROMPT = (
+    "Create the file .kontinuum/verify.yaml for this repository — Kontinuum's test recipe.\n"
+    "Inspect the project (language, package manifest, how its tests run) and write YAML with:\n"
+    "  image: a Docker image with the toolchain (e.g. python:3.11, node:20)\n"
+    "  gate:  a command that builds/lints/tests, runnable OFFLINE (no network)\n"
+    "  setup: (optional) an install command run WITH network before the gate, e.g. 'npm ci' or\n"
+    "         'pip install --target /work/.deps -r requirements.txt' — deps must land under /work\n"
+    "Keep the gate minimal but real. Create ONLY that one file."
+)
+
+
+def onboard(repo: str) -> None:
+    """Propose a verify.yaml for a repo via a PR the human confirms (§4). No sandbox — edit-only."""
+    base = _default_branch(repo)
+    workdir, cache = _worktree(repo, base)
+    try:
+        vpath = os.path.join(workdir, ".kontinuum", "verify.yaml")
+        if os.path.exists(vpath):
+            print(f"{repo}: already onboarded (.kontinuum/verify.yaml exists)")
+            return
+        subprocess.run(
+            ["claude", "-p", _ONBOARD_PROMPT, "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep",
+             "--disallowedTools", "Bash", "--permission-mode", "acceptEdits"],
+            cwd=workdir, capture_output=True, text=True, timeout=600)
+        if not os.path.exists(vpath):
+            print(f"{repo}: agent did not produce verify.yaml — rerun or write it by hand")
+            return
+        url = open_pr(workdir, repo, "kontinuum/onboarding",
+                      "Kontinuum: onboarding — add verify.yaml",
+                      "Proposed Kontinuum test recipe (image + gate). Review it, then merge to enable Kontinuum here.",
+                      base)
+        print(f"{repo}: onboarding PR {url}")
+    finally:
+        _remove_worktree(cache, workdir)
+
+
 def main(argv=None):
     import argparse
     import time
@@ -203,10 +271,21 @@ def main(argv=None):
     r.add_argument("--poll-sec", type=int)
     il = sub.add_parser("init-labels", help="create the kontinuum:* labels on a repo")
     il.add_argument("--repo", required=True)
+    ob = sub.add_parser("onboard", help="propose a verify.yaml for a repo via a PR")
+    ob.add_argument("--repo", required=True)
+    stt = sub.add_parser("status", help="show what K owns / is working / blocked (read-only)")
+    stt.add_argument("--config", default=None)
     args = p.parse_args(argv)
 
     if args.cmd == "init-labels":
         init_labels(args.repo)
+        return
+    if args.cmd == "onboard":
+        onboard(args.repo)
+        return
+    if args.cmd == "status":
+        for repo in load_config(args.config).repos:
+            status(repo)
         return
 
     cfg = load_config(args.config, {
@@ -224,6 +303,9 @@ def main(argv=None):
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
         now = datetime.utcnow()
         for repo in cfg.repos:                             # one K, several repos
+            if is_paused(repo):                            # kill switch: kontinuum:paused halts this repo
+                print(f"[{now:%H:%M:%S}] {repo}: paused")
+                continue
             maintain_prs(repo, cfg.bot_login)              # non-blocking: red CI on open PRs -> blocked
             did = run_once(repo, cfg.instance_id, now, lease, cfg.bot_login, cfg.assignee, executor)
             print(f"[{now:%H:%M:%S}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
