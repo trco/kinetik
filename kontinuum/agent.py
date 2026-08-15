@@ -1,11 +1,38 @@
-"""Claude agent runner (§2, option #2): drives the `claude` CLI on the host.
+"""The agent seam: the contract a backend implements, plus the Claude adapter (§2, option #2).
 
-The login stays on the host. File edits go to the worktree (cwd); the agent's *commands* run in the
-sandbox via the `run` tool (host Bash disabled), so a hijacked command is contained.
+Two ports, duck-typed like the rest of K — the Protocols below are that contract written where a
+type checker (and the next adapter author) can read it:
 
-Auth: on your laptop it uses the existing Claude Code login (no key). On a server/cron with no
-interactive login, set ANTHROPIC_API_KEY in the environment — the CLI picks it up automatically
-(subprocess inherits the env), so nothing else changes.
+    AgentRunner.run(sandbox, task, feedback="") -> str   # edits the worktree, returns the PR body
+    Reviewer.review(diff, task) -> Verdict               # read-only opinion on the staged diff
+
+The adapter's side of it: edit only files under `sandbox.workdir`, run every command through the
+sandbox rather than on the host, do nothing outward — push/PR/comment/label are orchestrator-only
+(`effects.py`) — and return a short markdown PR body.
+
+CONTAINMENT — what K enforces vs what it trusts:
+
+  Enforced, whatever the backend does: every command routed into `Sandbox` runs with no host env
+  forwarded, `--network none`, `--cap-drop ALL` and only the worktree mounted, so it has no
+  credentials to read and nowhere to send them. Only the worktree diff can reach a PR, and it is
+  secret-scanned first; outward effects stay orchestrator-side.
+
+  Not enforced: the adapter process itself. It runs on the host and inherits K's environment —
+  which on a headless install holds ANTHROPIC_API_KEY (see Auth below). Tool flags such as
+  `--disallowedTools Bash` keep a well-behaved CLI on the contract; they are a convenience, not the
+  boundary. A backend that ignores them can read host files and its own key.
+
+  So: the sandbox is the boundary, the CLI's flags are not. Run K with a host env carrying no
+  secrets beyond the agent's own credential, and register only adapters trusted to keep the
+  contract. Containing a less-trusted backend means boxing its process too — deferred (§16 trust
+  tiers), and a prerequisite for adopting one, not something the flags already give us.
+
+Adding a backend: implement the Protocol(s) here, then map a name to it in `cli.py`, where the
+config's `agent:` selector picks the runner. (A (role, task) router is §16 Later; an `if` per name
+is plenty while there are two.)
+
+Auth: on a laptop the CLI uses the existing Claude Code login (no key). On a server/cron with no
+interactive login, set ANTHROPIC_API_KEY — the CLI picks it up from the inherited env.
 """
 
 from __future__ import annotations
@@ -15,11 +42,31 @@ import os
 import subprocess
 import sys
 import tempfile
+from typing import Protocol, runtime_checkable
 
 from kontinuum.pipeline import Task, Verdict
 
 _MCP_SERVER = os.path.join(os.path.dirname(__file__), "sandbox_mcp.py")
 _NO_TOOLS = ["Bash", "Edit", "Write", "Read", "Glob", "Grep"]
+
+
+@runtime_checkable
+class AgentRunner(Protocol):
+    """Implements the issue by editing the worktree at `sandbox.workdir`; returns the PR body.
+
+    `feedback` is the previous attempt's failure (gate log, secret findings or reviewer reason) —
+    empty on the first try. Return even when the attempt went badly: the gate judges the worktree,
+    and a raise aborts the whole task instead (`poll_once` counts the error and drops the claim).
+    """
+
+    def run(self, sandbox, task: Task, feedback: str = "") -> str: ...
+
+
+@runtime_checkable
+class Reviewer(Protocol):
+    """Second opinion on the staged diff. Read-only: it must not touch the worktree (§10)."""
+
+    def review(self, diff: str, task: Task) -> Verdict: ...
 
 
 def _prompt(task: Task) -> str:
@@ -35,6 +82,13 @@ def _prompt(task: Task) -> str:
 
 
 class ClaudeAgentRunner:
+    """`AgentRunner` over the `claude` CLI: reasoning + edits on the host, commands via the box.
+
+    The login stays on the host; commands reach the sandbox through the `run` MCP tool. Restricting
+    the CLI's own tools (`--allowedTools` / `--disallowedTools Bash`) keeps it on the contract —
+    containment itself comes from the sandbox (see module docstring).
+    """
+
     def __init__(self, python_exe: str = sys.executable, timeout: int = 1200):
         self.python_exe = python_exe    # runs the MCP server (pure stdlib; any python works)
         self.timeout = timeout
@@ -66,7 +120,7 @@ class ClaudeAgentRunner:
 
 
 class ClaudeReviewer:
-    """Independent, read-only second opinion on the diff. One input, not the trust anchor (§10)."""
+    """`Reviewer` over the CLI: independent, read-only. One input, not the trust anchor (§10)."""
 
     def __init__(self, timeout: int = 600):
         self.timeout = timeout

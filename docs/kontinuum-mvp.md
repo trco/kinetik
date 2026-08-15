@@ -183,6 +183,14 @@ Kept because they're nearly free: **untrusted-content framing** (issue text deli
 > runs on the host (the login lives there) — acceptable because it executes no untrusted code there;
 > only file edits (scoped to the worktree) and command-routing to the box.
 
+> **Where the boundary is** (contract in `agent.py`): control 1 holds because the commands run *in
+> the box*, not because the CLI honours `--disallowedTools` — those flags keep a well-behaved
+> adapter on its contract and are a convenience, not the boundary. The adapter process itself runs
+> on the host and inherits K's env (on a headless install, `ANTHROPIC_API_KEY`), so K trusts a
+> registered adapter to keep the contract: run K with a host env holding no secrets beyond the
+> agent's own credential. A less-trusted backend needs its own process boxed (§16 trust tiers) —
+> that's a prerequisite for adopting one, not something today's flags already provide.
+
 ---
 
 ## 9. Verification Model

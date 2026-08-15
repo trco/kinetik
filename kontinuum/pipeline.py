@@ -1,8 +1,8 @@
 """Task execution pipeline core: agent edits a worktree, gate checks it, retry -> proposal (§10).
 
-Fake-first: any AgentRunner exposing `run(sandbox, issue) -> pr_body` works here — the real Claude
-Agent SDK drops into the same seam. Opening the PR from a Proposal happens at the credentialed
-effect boundary (`effects.open_pr`), not here.
+Fake-first: any object satisfying the `AgentRunner` / `Reviewer` contracts in `agent.py` works here
+— the Claude adapter and the test fakes drop into the same seam. Opening the PR from a Proposal
+happens at the credentialed effect boundary (`effects.open_pr`), not here.
 """
 
 from __future__ import annotations
