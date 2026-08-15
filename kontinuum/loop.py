@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -25,6 +26,8 @@ from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
 
 CACHE_DIR = os.path.expanduser("~/.kontinuum/cache")
+
+logger = logging.getLogger("kontinuum")
 
 
 class LeaseHeartbeat:
@@ -222,8 +225,9 @@ def reconcile_open_prs(repo: str, bot_login: str) -> None:
             q = GitHubIssueQueue(repo, n, bot_login)
             q.set_label("blocked")
             q.comment(reason)
-        except Exception:
-            pass
+            logger.info("#%d: blocked — %s", n, reason)
+        except Exception as e:
+            logger.warning("#%d: could not block: %s", n, e)
 
 
 def issue_labels(repo: str, number: int) -> list[str]:
@@ -254,7 +258,7 @@ def poll_once(repo: str, me: str, lease: timedelta, bot_login: str, execute,
         except Exception as e:
             errors[(repo, n)] = errors.get((repo, n), 0) + 1
             attempts = errors[(repo, n)]
-            print(f"  #{n}: error {attempts}/{MAX_ERRORS}: {e}")
+            logger.warning("#%d: error %d/%d: %s", n, attempts, MAX_ERRORS, e)
             try:
                 release_if_mine(q, me, datetime.utcnow())   # give up ownership FIRST so it can retry
             except Exception:
@@ -305,20 +309,20 @@ def onboard(repo: str) -> None:
     try:
         vpath = os.path.join(workdir, ".kontinuum", "verify.yaml")
         if os.path.exists(vpath):
-            print(f"{repo}: already onboarded (.kontinuum/verify.yaml exists)")
+            logger.info("%s: already onboarded (.kontinuum/verify.yaml exists)", repo)
             return
         subprocess.run(
             ["claude", "-p", _ONBOARD_PROMPT, "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep",
              "--disallowedTools", "Bash", "--permission-mode", "acceptEdits"],
             cwd=workdir, capture_output=True, text=True, timeout=600)
         if not os.path.exists(vpath):
-            print(f"{repo}: agent did not produce verify.yaml — rerun or write it by hand")
+            logger.error("%s: agent did not produce verify.yaml — rerun or write it by hand", repo)
             return
         url = open_pr(workdir, repo, "kontinuum/onboarding",
                       "Kontinuum: onboarding — add verify.yaml",
                       "Proposed Kontinuum test recipe (image + gate). Review it, then merge to enable Kontinuum here.",
                       base)
-        print(f"{repo}: onboarding PR {url}")
+        logger.info("%s: onboarding PR %s", repo, url)
     finally:
         _remove_worktree(cache, workdir)
 
@@ -328,6 +332,8 @@ def main(argv=None):
     import time
 
     from kontinuum.config import load_config
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     p = argparse.ArgumentParser(prog="kontinuum")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -375,16 +381,15 @@ def main(argv=None):
     errors: dict = {}                                      # per-issue consecutive-error counts, across passes
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
         for repo in cfg.repos:                             # one K, several repos
-            stamp = datetime.utcnow().strftime("%H:%M:%S")
             try:
                 if is_paused(repo):                        # kill switch: kontinuum:paused halts this repo
-                    print(f"[{stamp}] {repo}: paused")
+                    logger.info("%s: paused", repo)
                     continue
                 reconcile_open_prs(repo, cfg.bot_login)          # non-blocking: red CI on open PRs -> blocked
                 did = poll_once(repo, cfg.instance_id, lease, cfg.bot_login, executor, cfg.assignee, errors)
-                print(f"[{stamp}] {repo}: " + (f"worked #{did}" if did else "nothing ready"))
+                logger.info("%s: %s", repo, f"worked #{did}" if did else "nothing ready")
             except Exception as e:                         # a whole-repo failure skips the pass, never the daemon
-                print(f"[{stamp}] {repo}: pass error: {e}")
+                logger.error("%s: pass error: %s", repo, e)
         time.sleep(cfg.poll_sec)
 
 
