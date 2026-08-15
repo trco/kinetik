@@ -11,8 +11,11 @@ The bundle mirrors the contents of `.claude/` (so `bundled_plugins/skills/x.md` 
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
+
+from kontinuum.worktree import _git_exclude_path
 
 BUNDLE = os.path.join(os.path.dirname(__file__), "bundled_plugins")
 
@@ -37,3 +40,27 @@ def inject(workdir: str, bundle: str = BUNDLE) -> list[str]:
             shutil.copy2(os.path.join(root, name), dst)
             injected.append(relpath)
     return injected
+
+
+@contextlib.contextmanager
+def injected(workdir: str):
+    """Inject the bundled plugins for the duration, kept out of the commit, exclude restored on exit.
+
+    For the edit-only flows (`onboard`, `seed-docs`) that need `/docs-seed` available but have no
+    deps-exclude machinery of their own. `execute()` folds injection into its own exclude instead.
+    Restoring the exclude matters: the info/exclude is shared across worktrees of a cached clone, so a
+    lingering entry would wrongly hide a target repo's own `.claude/` file from later commits.
+    """
+    paths = inject(workdir)
+    exclude_path = backup = None
+    if paths:
+        exclude_path = _git_exclude_path(workdir)
+        backup = open(exclude_path).read() if os.path.exists(exclude_path) else ""
+        with open(exclude_path, "a") as f:
+            f.write("\n".join(sorted(paths)) + "\n")
+    try:
+        yield paths
+    finally:
+        if exclude_path is not None:
+            with open(exclude_path, "w") as f:
+                f.write(backup)

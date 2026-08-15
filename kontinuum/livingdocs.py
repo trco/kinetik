@@ -11,12 +11,35 @@ bootstrapped for the touched area (organic growth) — a full initial survey is 
 from __future__ import annotations
 
 import logging
+import os
 
 from kontinuum.gitcmd import git
 
 logger = logging.getLogger("kontinuum")
 
 _SKIP_PREFIXES = ("docs/living-docs/", ".claude/")   # never treat docs or injected plugins as source
+LIVING_DOCS = "docs/living-docs"
+
+
+def has_living_docs(workdir: str) -> bool:
+    return os.path.isdir(os.path.join(workdir, LIVING_DOCS))
+
+
+def seed(agent, workdir: str) -> bool:
+    """Best-effort: author an initial living-docs set via the injected `/docs-seed` command.
+
+    The prompt lives in the bundled command, not here — this just invokes it. Returns whether living
+    docs exist after. No-op (returns current state) if the agent can't run commands. Used by
+    `onboard` and the `seed-docs` command; the plugin must be injected into the worktree first.
+    """
+    run = getattr(agent, "run_command", None)
+    if run is None:
+        return has_living_docs(workdir)
+    try:
+        run(workdir, "/docs-seed")
+    except Exception as e:
+        logger.warning("living-docs seed skipped: %s", e)
+    return has_living_docs(workdir)
 
 
 def changed_paths(workdir: str) -> list[str]:
@@ -38,19 +61,21 @@ def changed_paths(workdir: str) -> list[str]:
     return paths
 
 
-def maintain(agent, workdir: str, task) -> None:
-    """Best-effort: ask the agent to refresh living docs for the change, editing them in the worktree.
+def maintain(agent, workdir: str) -> None:
+    """Best-effort: refresh living docs for the change via the injected `/docs-update` command.
 
-    No-op if the agent has no `update_docs` capability or nothing source-level changed. Any failure
-    is swallowed — living docs are never allowed to block the code PR.
+    K computes the changed paths (the command has no shell) and passes them as arguments; the prompt
+    lives in the bundled command. No-op if the agent can't run commands or nothing source-level
+    changed. Failures are swallowed — living docs never block the code PR. (`execute()` injects the
+    plugin, so the command resolves in the worktree.)
     """
-    update = getattr(agent, "update_docs", None)
-    if update is None:
+    run = getattr(agent, "run_command", None)
+    if run is None:
         return
     try:
         paths = changed_paths(workdir)
         if not paths:
             return
-        update(workdir, task, paths)
+        run(workdir, "/docs-update " + " ".join(paths[:100]))
     except Exception as e:
         logger.warning("living-docs update skipped: %s", e)

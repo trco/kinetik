@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
-from kontinuum.livingdocs import changed_paths, maintain
-from kontinuum.pipeline import Task
+from kontinuum.livingdocs import changed_paths, has_living_docs, maintain, seed
 
 
 def _repo(tmp_path):
@@ -40,23 +40,24 @@ def test_maintain_noops_without_capability(tmp_path):
     r = _repo(tmp_path)
     (tmp_path / "a.py").write_text("x = 2\n")
 
-    class Agent:                                          # no update_docs -> graceful skip
+    class Agent:                                          # no run_command -> graceful skip
         pass
 
-    maintain(Agent(), r, Task(1))                         # must not raise
+    maintain(Agent(), r)                                  # must not raise
 
 
-def test_maintain_passes_changed_paths_to_the_agent(tmp_path):
+def test_maintain_invokes_docs_update_with_changed_paths(tmp_path):
     r = _repo(tmp_path)
     (tmp_path / "a.py").write_text("x = 2\n")
     seen = {}
 
     class Agent:
-        def update_docs(self, workdir, task, paths):
-            seen["paths"] = paths
+        def run_command(self, workdir, command):
+            seen["command"] = command
 
-    maintain(Agent(), r, Task(1))
-    assert "a.py" in seen["paths"]
+    maintain(Agent(), r)
+    assert seen["command"].startswith("/docs-update")    # invokes the injected command, not a .py prompt
+    assert "a.py" in seen["command"]                      # K passes the changed paths as arguments
 
 
 def test_maintain_skips_when_nothing_changed(tmp_path):
@@ -64,19 +65,53 @@ def test_maintain_skips_when_nothing_changed(tmp_path):
     called = []
 
     class Agent:
-        def update_docs(self, *a):
+        def run_command(self, *a):
             called.append(1)
 
-    maintain(Agent(), r, Task(1))                         # clean tree -> agent not called
+    maintain(Agent(), r)                                  # clean tree -> no command
     assert not called
 
 
-def test_maintain_swallows_agent_errors(tmp_path):
+def test_maintain_swallows_errors(tmp_path):
     r = _repo(tmp_path)
     (tmp_path / "a.py").write_text("x = 2\n")
 
     class Agent:
-        def update_docs(self, *a):
+        def run_command(self, *a):
             raise RuntimeError("boom")
 
-    maintain(Agent(), r, Task(1))                         # docs failure never blocks the code PR
+    maintain(Agent(), r)                                  # docs failure never blocks the code PR
+
+
+def test_has_living_docs(tmp_path):
+    assert not has_living_docs(str(tmp_path))
+    (tmp_path / "docs" / "living-docs").mkdir(parents=True)
+    assert has_living_docs(str(tmp_path))
+
+
+def test_seed_noops_without_capability(tmp_path):
+    class Agent:                                          # no run_command -> graceful skip, no docs
+        pass
+
+    assert seed(Agent(), str(tmp_path)) is False
+
+
+def test_seed_invokes_docs_seed_and_reports_result(tmp_path):
+    seen = {}
+
+    class Agent:
+        def run_command(self, workdir, command):
+            seen["command"] = command
+            (Path(workdir) / "docs" / "living-docs").mkdir(parents=True)
+            (Path(workdir) / "docs" / "living-docs" / "INDEX.md").write_text("i")
+
+    assert seed(Agent(), str(tmp_path)) is True           # produced docs -> True
+    assert seen["command"] == "/docs-seed"                # invokes the injected command
+
+
+def test_seed_swallows_errors(tmp_path):
+    class Agent:
+        def run_command(self, workdir, command):
+            raise RuntimeError("boom")
+
+    assert seed(Agent(), str(tmp_path)) is False          # error swallowed, nothing produced -> False
