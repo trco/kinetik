@@ -17,6 +17,9 @@ kontinuum = "kontinuum.cli:main"
 [tool.setuptools]
 packages = ["kontinuum"]      # flat layout: install only the package, not tests/
 
+[tool.setuptools.package-data]
+kontinuum = ["bundled_plugins/**/*"]   # ship the injected .claude/ plugin bundle
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 
