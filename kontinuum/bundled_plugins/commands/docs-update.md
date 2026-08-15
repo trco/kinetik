@@ -12,6 +12,6 @@ The arguments above are the repo-relative paths that changed — Kontinuum compu
 2. Read the frontmatter of every page under `docs/living-docs/{subsystems,flows,adr}`. Against the changed paths, find:
    - **affected** — pages whose `sources:` globs cover any changed path.
    - **gaps** — a changed area covered by NO page that is significant enough to deserve one.
-3. Refresh each affected page against the changed code; for a real gap, add one short page. Stamp `last_verified.date` to today.
+3. For each affected page and each real gap, dispatch the `living-docs-maintainer` sub-agent (subagent_type: living-docs-maintainer), one per page — run independent pages in parallel. Pass it the page path, its type, and the relevant changed paths. Write each page it returns to its file.
 4. Rebuild `docs/living-docs/INDEX.md` from all page frontmatter per the skill.
 5. If nothing here is doc-worthy, make no changes.

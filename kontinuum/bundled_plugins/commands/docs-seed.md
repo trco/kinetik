@@ -9,9 +9,9 @@ You have NO shell; infer the structure by reading the code. Do not run git.
 
 ## Steps
 1. Initialize `docs/living-docs/` per the skill: `config.json` (infer `sourceRoots` from the layout, `baseBranch` from origin/HEAD else `main`), `README.md`, an empty `INDEX.md`, and the subsystems/flows/adr folders.
-2. Survey each top-level module under the source roots. Draft:
+2. Survey each top-level module under the source roots and decide the page list:
    - core **subsystem** pages (one per major module),
    - main **flow** pages (end-to-end),
    - **adr** pages only for genuinely non-obvious decisions.
-3. Write each page with full frontmatter (`title`, `type`, `summary`, `sources` as directory globs, `last_verified: {date: <today>, sha: seed}`, `related`). Keep pages short; point to code as `path:line`.
+3. For each page, dispatch the `living-docs-maintainer` sub-agent (subagent_type: living-docs-maintainer), one per page — run independent pages in parallel. Pass it the page path, type, and relevant source globs. Write each page it returns to its file.
 4. Rebuild `docs/living-docs/INDEX.md` from all page frontmatter per the skill.
