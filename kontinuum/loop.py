@@ -126,6 +126,14 @@ def _find_open_pr(repo: str, branch: str) -> str | None:
     return lines[0] if lines else None
 
 
+def pr_body(number: int, proposal, reviewed: bool) -> str:
+    """Structured PR body. `Closes #N` stays so merging still closes the issue."""
+    checks = "gate ✓ · secret-scan ✓" + (" · reviewer ✓" if reviewed else "")   # only what actually ran
+    return (f"## Summary\n{proposal.pr_body.strip()}\n\n"
+            f"Closes #{number}\n\n"
+            f"---\n🤖 Kontinuum — {checks} (attempt {proposal.attempts})")
+
+
 def build_executor(agent, reviewer=None):
     """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
     def execute(queue, me):
@@ -167,7 +175,7 @@ def build_executor(agent, reviewer=None):
             if any(l in issue_labels(queue.repo, queue.number) for l in STOP_LABELS) or not still_owns(queue, me, now):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
-            body = f"Closes #{queue.number}\n\n{proposal.pr_body}"   # Closes #N -> auto-closes the issue on merge
+            body = pr_body(queue.number, proposal, reviewed=reviewer is not None)
             url = open_pr(workdir, queue.repo, branch, f"Kontinuum: address #{queue.number}", body, base)
             queue.comment(f"Kontinuum opened {url}")
             queue.set_label("pr-open")                    # CI is checked non-blocking in reconcile_open_prs()

@@ -28,8 +28,9 @@ def _prompt(task: Task) -> str:
         f"Issue #{task.number}: {task.title}\n\n{task.body}\n\n"
         "To run commands (tests, scripts, checks), use the `run` tool from the kontinuum-sandbox "
         "MCP server — it executes in a sandbox where the repo is at /work and there is NO network. "
-        "Do not use any other shell. When finished, reply with a one-paragraph summary of what you "
-        "changed — it becomes the pull-request description."
+        "Do not use any other shell. When finished, reply with a concise markdown summary of what "
+        "you changed — a sentence of intent, then short bullets for the notable changes. It is "
+        "placed under a `## Summary` heading in the pull request, so add no heading of your own."
     )
 
 
