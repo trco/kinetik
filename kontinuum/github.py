@@ -1,9 +1,8 @@
 """GitHub adapter for the claim log: ClaimEntry <-> issue-comment markers, via `gh`.
 
 The pure marker (format/parse) is unit-tested offline; the `gh` calls are thin I/O that
-needs a live issue to smoke-test. Writes (append/set_label) are the privileged half and
-will run through the Effect Broker once it exists (step 3); for now they use ambient `gh`
-auth so the claim log works end-to-end.
+needs a live issue to smoke-test. Writes (append/set_label) are the privileged half: they
+run in the orchestrator on ambient `gh` auth, never in the credential-free agent sandbox.
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ def parse_marker(comment_id: int, body: str) -> ClaimEntry | None:
 
 
 def gh(*args: str) -> str:
-    """Run `gh` and return stdout. Writes here are the privileged half — the Effect Broker (step 3)."""
+    """Run `gh` and return stdout. Writes here are the privileged half — orchestrator-only (§3)."""
     return subprocess.run(["gh", *args], check=True, capture_output=True, text=True).stdout
 
 

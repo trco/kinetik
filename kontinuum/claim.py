@@ -1,6 +1,6 @@
 """Ownership resolution for the epoch-leased claim log (MVP §7).
 
-Pure functions only — no GitHub, no clock, no I/O. The Effect Broker does the
+Pure functions only — no GitHub, no clock, no I/O. The orchestrator does the
 appends; this module just decides who owns an issue given the ordered log.
 That purity is why the single-owner invariant is testable without mocks.
 """
