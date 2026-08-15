@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime, timedelta
 
-from kontinuum.claim import Kind, resolve_owner
-from kontinuum.loop import HOLD_LABEL, _ready_args, handle_issue
+from kontinuum.claim import Kind, max_epoch, resolve_owner
+from kontinuum.loop import HOLD_LABEL, Heartbeater, _ready_args, handle_issue
+from kontinuum.protocol import attempt_claim
 from tests.fakes import FakeIssueQueue
 
 NOW = datetime(2026, 8, 13, 12, 0, 0)
@@ -14,7 +16,7 @@ LEASE = timedelta(hours=1)
 
 def _recorder():
     calls = []
-    return (lambda q: calls.append(q)), calls
+    return (lambda q, me: calls.append(q)), calls
 
 
 def test_claims_and_executes_a_ready_issue():
@@ -48,6 +50,16 @@ def test_hold_prevents_a_fresh_claim():
     assert handle_issue(q, "i0", NOW, LEASE, [HOLD_LABEL], execute) == "hold"
     assert resolve_owner(q.read_claim_log(), NOW) is None  # never claimed
     assert calls == []
+
+
+def test_heartbeater_refreshes_the_lease():
+    q = FakeIssueQueue()
+    attempt_claim(q, "i0", NOW, LEASE)
+    epoch = max_epoch(q.read_claim_log())
+    before = len(q.read_claim_log())
+    with Heartbeater(q, "i0", epoch, LEASE, interval=0.02):
+        time.sleep(0.12)
+    assert len(q.read_claim_log()) > before               # background heartbeats were appended
 
 
 def test_shared_queue_has_no_assignee_filter():

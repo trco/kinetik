@@ -10,19 +10,46 @@ import json
 import os
 import shutil
 import tempfile
+import threading
 from datetime import datetime, timedelta
 
 from kontinuum.agent import ClaudeAgentRunner, ClaudeReviewer
 from kontinuum.ci import ci_state
+from kontinuum.claim import max_epoch
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh, init_labels
 from kontinuum.gitcmd import git
 from kontinuum.pipeline import Task, propose
-from kontinuum.protocol import attempt_claim, release_if_mine
+from kontinuum.protocol import assert_owner, attempt_claim, heartbeat, release_if_mine
 from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
 
 CACHE_DIR = os.path.expanduser("~/.kontinuum/cache")
+
+
+class Heartbeater:
+    """Refreshes the claim lease in the background while a task runs (§7), so a long task can't lose it."""
+
+    def __init__(self, queue, me: str, epoch: int, lease: timedelta, interval: float | None = None):
+        self.queue, self.me, self.epoch, self.lease = queue, me, epoch, lease
+        self._interval = interval if interval is not None else max(30.0, lease.total_seconds() / 3)
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+    def __enter__(self):
+        self._thread.start()
+        return self
+
+    def _loop(self):
+        while not self._stop.wait(self._interval):
+            try:
+                heartbeat(self.queue, self.me, self.epoch, datetime.utcnow(), self.lease)
+            except Exception:
+                pass                                          # transient GitHub error -> try next beat
+
+    def __exit__(self, *exc):
+        self._stop.set()
+        self._thread.join(timeout=5)
 
 HOLD_LABEL = "kontinuum:hold"
 
@@ -33,12 +60,14 @@ def handle_issue(queue, me: str, now: datetime, lease: timedelta, labels: list[s
         release_if_mine(queue, me, now)              # human forcibly reclaimed -> back off
         return "hold"
     if attempt_claim(queue, me, now, lease):
-        execute(queue)
+        epoch = max_epoch(queue.read_claim_log())    # our winning epoch, to heartbeat at
+        with Heartbeater(queue, me, epoch, lease):   # keep the lease alive for the whole task
+            execute(queue, me)
         return "executed"
     return "skip"
 
 
-def execute(queue) -> None:
+def execute(queue, me: str) -> None:
     # ponytail: default stub for the daemon until a real agent + recipe are configured.
     # The end-to-end executor is make_executor() below (clone -> sandbox -> propose -> PR).
     print(f"  claimed {queue.repo}#{queue.number} — would run pipeline")
@@ -83,7 +112,7 @@ class DemoAgent:
 
 def make_executor(agent, reviewer=None):
     """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
-    def execute(queue):
+    def execute(queue, me):
         base = _default_branch(queue.repo)
         workdir, cache = _worktree(queue.repo, base)
         try:
@@ -96,6 +125,10 @@ def make_executor(agent, reviewer=None):
             proposal = propose(sandbox, task, recipe.gate, agent, reviewer)
             if proposal is None:
                 queue.set_label("blocked")
+                return None
+            now = datetime.utcnow()                      # §7 guard: still ours, and no human hold, before any effect
+            if HOLD_LABEL in issue_labels(queue.repo, queue.number) or not assert_owner(queue, me, now):
+                release_if_mine(queue, me, now)          # human hold or lost lease -> back off, open no PR
                 return None
             url = open_pr(workdir, queue.repo, queue.number, proposal.pr_body, base)
             queue.comment(f"Kontinuum opened {url}")
