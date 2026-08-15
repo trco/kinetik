@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 from kontinuum.ci import summarize_checks
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh
+from kontinuum.livingdocs import maintain as maintain_living_docs
 from kontinuum.pipeline import Task, propose
 from kontinuum.plugins import inject
 from kontinuum.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
@@ -141,6 +142,7 @@ def build_executor(agent, reviewer=None):
             if any(l in queue.labels() for l in STOP_LABELS) or not still_owns(queue, me, now):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
+            maintain_living_docs(agent, workdir, task)   # best-effort: doc updates ride in this same PR
             body = pr_body(queue.number, proposal, reviewed=reviewer is not None)
             url = open_pr(workdir, queue.repo, branch, f"{task.title} (#{queue.number})", body, base)
             queue.comment(f"Kontinuum opened {url}")

@@ -118,6 +118,31 @@ class ClaudeAgentRunner:
         finally:
             sandbox.stop()
 
+    def update_docs(self, workdir: str, task: Task, changed_paths: list[str]) -> None:
+        """Optional capability: draft living-docs updates for the change, editing docs in the worktree.
+
+        A docs-only pass — no commands, so no sandbox/MCP; K owns git, so no Bash. Best-effort: a
+        timeout or non-zero exit is ignored (the caller never lets docs block the code PR).
+        """
+        listing = "\n".join(f"- {p}" for p in changed_paths[:100])
+        prompt = (
+            f"You just changed this repo to resolve issue #{task.number}: {task.title}.\n\n"
+            f"Changed files:\n{listing}\n\n"
+            "Update the repo's living docs under docs/living-docs/ to reflect these changes. Read the "
+            "`living-docs` skill first for the page format and initialization. Edit the docs files "
+            "directly; touch ONLY pages relevant to the changed files (refresh an affected page, or add "
+            "one for a newly-significant area) and rebuild INDEX.md. If docs/living-docs/ does not exist, "
+            "initialize the minimal structure per the skill. If nothing here is doc-worthy, change "
+            "nothing. Do NOT edit code and do NOT run git."
+        )
+        try:
+            subprocess.run(
+                ["claude", "-p", prompt, "--allowedTools", "Read", "Edit", "Write", "Glob", "Grep",
+                 "--disallowedTools", "Bash", "--permission-mode", "acceptEdits"],
+                cwd=workdir, capture_output=True, text=True, timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            pass                                          # best-effort; the caller continues to the PR
+
 
 class ClaudeReviewer:
     """`Reviewer` over the CLI: independent, read-only. One input, not the trust anchor (§10)."""
