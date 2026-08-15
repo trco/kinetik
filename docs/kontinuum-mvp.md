@@ -328,7 +328,26 @@ Existing CI                         # runs e2e on K's PRs (K reads status)
 
 ---
 
-## 16. Later — deferred, designed, not discarded
+## 16. Roadmap — v1 next, then deferred
+
+### 16.1 · v1 — being built now
+
+The next build turns Kontinuum from the bare loop into a **context-aware, planning** worker: it learns
+each repo (living docs), plans before it codes, and loads the right skills. Five pieces,
+dependency-ordered; each comes online only after merge + `git pull` + daemon restart, so K gets more
+capable as it builds itself.
+
+| # | Piece | Decision | Built by | Dep |
+|---|---|---|---|---|
+| 1 | **Agent contract** | Formalize the `AgentRunner`/`Reviewer` contract + `agent:` selector; Claude stays the reference. **Containment is enforced by K's boundary (sandbox + no host creds), not by trusting an agent CLI's tool flags.** A 2nd backend is on-demand. | dogfood | — |
+| 2 | **Universal-plugin injection** | K bundles repo-agnostic plugins and injects them into the worktree `.claude/` at runtime, **excluded from the commit** (same trick as the deps-exclude). Repo-native `.claude/` is auto-loaded and used as-is. | hand-build | — |
+| 3 | **Living docs** | Reuse the databox living-docs plugin. Three roles: **seed** (`onboard`), **update** (a same-PR pipeline step via `docs-update`), **consume** (agent context). Doc diffs ride in the **same PR** as the code; content lives per-repo in `docs/living-docs/`; treated as context-to-verify, never ground truth. | hand-build | 2 |
+| 4 | **Per-issue planner** | Before coding, the agent — judging whether the issue warrants it — writes a plan to `docs/plans/<date>-<slug>.md`, grounded in living docs, then follows it. Default autonomous-until-PR (plan ships in the same PR); `kontinuum:plan-first` forces a plan-approval checkpoint first. | dogfood | 3 |
+| 5 | **Config surface** | Per-repo config gains an `agent:` selector + which **universal plugins** are on (default: all). Repo-native `.claude/` needs no declaration. | dogfood | 2 |
+
+Issues stay human-authored; a signal→issue helper, if ever wanted, is an *interactive* skill, not a K feature.
+
+### 16.2 · Still deferred — designed, not discarded
 
 Each item is a real feature cut from the first loop. Build it when its trigger fires; not before.
 
@@ -337,8 +356,7 @@ Each item is a real feature cut from the first loop. Build it when its trigger f
 | **Egress-allowlist proxy** | box reaches only package registries (vs the offline `setup` step) | a repo's tests genuinely need network mid-run |
 | **Per-type evidence** (`fix` must ship a test that fails-before/passes-after) | objective proof a fix works, not the agent's word | you want stronger "done" than the plain gate |
 | **N-diverse reviewers** (correctness/security/requirements lenses) | multiple perspective-diverse reviewers | high-risk paths (security/payment/auth) or `trust:external` work |
-| **Agent Registry + Router** (matcher + priority; custom agents) | `(role,task)→agent`, custom runners override defaults | a **2nd runner** exists (e.g. an integration-test harness) |
-| **Surveyor / richer onboarding** (CURRENT_STATE + doc set) | deep repo survey beyond a proposed `verify.yaml` | onboarding quality with the generalist agent proves insufficient |
+| **Agent Registry + Router** (matcher + priority; custom agents) | `(role,task)→agent`, custom runners override defaults | a **2nd runner** exists — the *contract* + `agent:` selector is v1 (§16.1); the registry/router itself stays deferred |
 | **Trust tiers** (`internal|external`) + **hardened profile** + **red-team suite** | stricter egress + human-promote + N-diverse review for untrusted issues | before pointing K at a repo with external/anonymous reporters |
 | **`type/investigate` + SignalReader** (read-only Sentry/ES/Grafana) | root-cause tasks that read production signals | the core loop is reliable and signal-driven work is wanted |
 | **Producers** (Asana/Sentry/ES/Grafana → issues) + `ingest.db` | automated signal→issue creation, idempotent via own store | after the core loop holds; the issue-queue seam already supports them |
