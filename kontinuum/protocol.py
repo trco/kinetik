@@ -2,7 +2,7 @@
 
 `attempt_claim` is what each K instance's loop calls. The `queue` is duck-typed — the
 real GitHub adapter and the test fake both expose read_claim_log / append / set_label.
-The Effect Broker owns the `append`/`set_label` side (credentials); this just sequences them.
+The `append`/`set_label` side is credentialed and runs orchestrator-side; this just sequences them.
 """
 
 from __future__ import annotations
