@@ -21,11 +21,10 @@ def summarize_checks(checks: list) -> str:
         state = (c.get("state") or "").upper()            # StatusContext: SUCCESS / FAILURE / PENDING / ERROR
         if status in ("QUEUED", "IN_PROGRESS", "PENDING", "WAITING") or state == "PENDING":
             seen.add("pending")
-        elif conclusion in ("FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE") \
-                or state in ("FAILURE", "ERROR"):
-            seen.add("fail")
-        else:
+        elif conclusion in ("SUCCESS", "SKIPPED", "NEUTRAL") or state == "SUCCESS":
             seen.add("pass")
+        else:
+            seen.add("fail")   # FAILURE/ERROR and any unrecognized state -> conservative fail
     if "fail" in seen:
         return "fail"
     if "pending" in seen:

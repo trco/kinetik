@@ -28,6 +28,8 @@ TOOL = {
 
 
 def _run(command: str) -> str:
+    if not CID:
+        return "error: sandbox container id not set (KONTINUUM_SANDBOX_CID missing)"
     p = subprocess.run(["docker", "exec", "-w", "/work", CID, "sh", "-c", command],
                        capture_output=True, text=True, timeout=600)
     return f"exit={p.returncode}\n{p.stdout}{p.stderr}"

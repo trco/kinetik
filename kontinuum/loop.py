@@ -146,7 +146,11 @@ def make_executor(agent, reviewer=None):
             recipe = load_recipe(workdir)                # per-repo setup/gate/image
             if recipe.setup:                             # trusted install WITH network, before the isolated box
                 before = _untracked(workdir)
-                Sandbox(recipe.image, workdir, "bridge").run("sh", "-c", recipe.setup)
+                r = Sandbox(recipe.image, workdir, "bridge").run("sh", "-c", recipe.setup)
+                if r.returncode != 0:                    # don't waste the agent on a broken environment
+                    queue.set_label("blocked")
+                    queue.comment(f"Kontinuum setup step failed (exit {r.returncode}):\n{(r.stdout + r.stderr)[-800:]}")
+                    return None
                 _gitignore(workdir, _untracked(workdir) - before)   # keep installed deps out of the diff/PR
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))

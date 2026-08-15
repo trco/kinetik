@@ -41,7 +41,7 @@ def propose(sandbox, task: Task, gate_cmd: str, agent, reviewer=None, max_attemp
     Oscillation guard: if two attempts produce the identical diff, stop early — it isn't converging.
     """
     feedback = ""
-    last_diff = None
+    recent: list[str] = []                               # last few diffs, to catch A/B/A oscillation
     for attempt in range(1, max_attempts + 1):
         pr_body = agent.run(sandbox, task, feedback)     # edits the worktree at sandbox.workdir
         gate = run_gate(sandbox, gate_cmd)
@@ -62,8 +62,8 @@ def propose(sandbox, task: Task, gate_cmd: str, agent, reviewer=None, max_attemp
             feedback = f"The change adds secrets ({', '.join(secrets)}); remove them."
         else:
             feedback = f"A reviewer rejected the change: {verdict.reason}"
-        stuck = diff == last_diff                        # same diff again -> not converging
-        last_diff = diff
+        stuck = diff in recent                           # seen this diff before -> not converging (incl. cycles)
+        recent = (recent + [diff])[-3:]
         git(sandbox.workdir, "reset", "--hard")          # discard the failed attempt, try fresh
         git(sandbox.workdir, "clean", "-fd")
         if stuck:

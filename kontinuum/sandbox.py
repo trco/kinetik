@@ -38,10 +38,14 @@ class Sandbox:
         self._cid = subprocess.run(
             ["docker", "run", "-d", *self._flags(), self.image, "tail", "-f", "/dev/null"],
             check=True, capture_output=True, text=True).stdout.strip()
+        if not self._cid:
+            raise RuntimeError("docker run did not return a container id")
         return self
 
     def exec(self, *cmd: str, timeout: int = 600) -> subprocess.CompletedProcess:
         """Run a command in the open container — filesystem/env state persists between calls."""
+        if not self._cid:
+            raise RuntimeError("sandbox not started — call start() (or use it as a context manager)")
         return subprocess.run(["docker", "exec", "-w", "/work", self._cid, *cmd],
                               capture_output=True, text=True, timeout=timeout)
 
