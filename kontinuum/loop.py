@@ -17,6 +17,7 @@ from kontinuum.ci import summarize_checks
 from kontinuum.effects import open_pr
 from kontinuum.github import GitHubIssueQueue, gh
 from kontinuum.pipeline import Task, propose
+from kontinuum.plugins import inject
 from kontinuum.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
 from kontinuum.recipe import load_recipe
 from kontinuum.sandbox import Sandbox
@@ -114,6 +115,7 @@ def build_executor(agent, reviewer=None):
         workdir, cache = _new_worktree(queue.repo, base)
         exclude_path = exclude_backup = None
         try:
+            excluded = set(inject(workdir))              # bundled K plugins into .claude/ (repo-native wins)
             recipe = load_recipe(workdir)                # per-repo setup/gate/image
             if recipe.setup:                             # trusted install WITH network, before the isolated box
                 before = _untracked_paths(workdir)
@@ -122,12 +124,12 @@ def build_executor(agent, reviewer=None):
                     queue.set_label("blocked")
                     queue.comment(f"Kontinuum setup step failed (exit {r.returncode}):\n{(r.stdout + r.stderr)[-800:]}")
                     return None
-                new = _untracked_paths(workdir) - before       # keep installed deps out of the diff/PR
-                if new:
-                    exclude_path = _git_exclude_path(workdir)
-                    exclude_backup = open(exclude_path).read() if os.path.exists(exclude_path) else ""
-                    with open(exclude_path, "a") as f:          # restored in finally -> no leak to other issues
-                        f.write("\n".join(sorted(new)) + "\n")
+                excluded |= _untracked_paths(workdir) - before   # keep installed deps out of the diff/PR too
+            if excluded:                                 # injected plugins + installed deps stay out of the diff/PR
+                exclude_path = _git_exclude_path(workdir)
+                exclude_backup = open(exclude_path).read() if os.path.exists(exclude_path) else ""
+                with open(exclude_path, "a") as f:              # restored in finally -> no leak to other issues
+                    f.write("\n".join(sorted(excluded)) + "\n")
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
             sandbox = Sandbox(recipe.image, workdir, recipe.network)   # agent + gate: offline by default
