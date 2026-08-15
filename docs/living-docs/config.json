@@ -1,0 +1,5 @@
+{
+  "livingDocsRoot": "docs/living-docs",
+  "sourceRoots": ["kontinuum"],
+  "baseBranch": "master"
+}
