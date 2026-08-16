@@ -45,6 +45,7 @@ import tempfile
 from typing import Protocol, runtime_checkable
 
 from kontinuum.pipeline import Task, Verdict
+from kontinuum.plan import existing_plan, follow_prompt, plan_prompt
 
 _MCP_SERVER = os.path.join(os.path.dirname(__file__), "sandbox_mcp.py")
 _NO_TOOLS = ["Bash", "Edit", "Write", "Read", "Glob", "Grep"]
@@ -69,10 +70,12 @@ class Reviewer(Protocol):
     def review(self, diff: str, task: Task) -> Verdict: ...
 
 
-def _prompt(task: Task) -> str:
+def _prompt(task: Task, plan: str | None = None) -> str:
+    """The implement prompt. `plan` = an already-approved plan to follow, else the agent writes one."""
     return (
         f"Implement this GitHub issue by editing files in your working directory.\n\n"
         f"Issue #{task.number}: {task.title}\n\n{task.body}\n\n"
+        f"{follow_prompt(plan) if plan else plan_prompt(task)}\n\n"
         "To run commands (tests, scripts, checks), use the `run` tool from the kontinuum-sandbox "
         "MCP server — it executes in a sandbox where the repo is at /work and there is NO network. "
         "Do not use any other shell. When finished, reply with a concise markdown summary of what "
@@ -102,7 +105,7 @@ class ClaudeAgentRunner:
             cfgpath = os.path.join(tempfile.mkdtemp(), "mcp.json")
             with open(cfgpath, "w") as f:
                 json.dump(cfg, f)
-            prompt = _prompt(task)
+            prompt = _prompt(task, existing_plan(sandbox.workdir, task.number))
             if feedback:
                 prompt += f"\n\nA previous attempt failed. Fix it based on this:\n{feedback}"
             try:
@@ -122,8 +125,9 @@ class ClaudeAgentRunner:
         """Optional capability: run an injected slash command headless in the worktree.
 
         Drives the living-docs plugin (`/docs-update`, `/docs-seed`) — the prompt lives in the bundled
-        command file, not here. `Task` lets the command dispatch the `living-docs-maintainer` sub-agent
-        (one clean context per page). A docs-only pass: no commands to run, so no sandbox/MCP; no Bash,
+        command file, not here — and the plan-first pass (`plan.draft`, which passes a plain prompt).
+        `Task` lets the command dispatch the `living-docs-maintainer` sub-agent
+        (one clean context per page). An edit-only pass: no commands to run, so no sandbox/MCP; no Bash,
         since K owns git — and `--disallowedTools Bash` propagates to sub-agents too (verified), so the
         Task fan-out grants no host-command escape. Best-effort: a timeout is swallowed by the caller.
         """

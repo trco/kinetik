@@ -8,11 +8,12 @@
 - [Claim Protocol](subsystems/claim-protocol.md) — Epoch-leased, append-only claim log in GitHub issue comments — how a K instance takes, holds, and gives up sole ownership of an issue.
 - [Daemon Loop](subsystems/daemon-loop.md) — The `kontinuum run` poll pass — one issue per pass, label-driven, lease-heartbeated, with guards re-checked before every effect.
 - [Execution Pipeline](subsystems/execution-pipeline.md) — The attempt loop that turns an issue into a reviewed, gate-green diff — and the credentialed boundary that turns that diff into a PR.
+- [Per-Issue Planning](subsystems/planning.md) — One plan artifact per issue (`docs/plans/<date>-issue-<N>-<slug>.md`) reachable two ways — riding in the code PR by default, or as a plan-only PR a human merges to approve when `kontinuum:plan-first` is set.
 - [Sandbox](subsystems/sandbox.md) — Ephemeral, credential-free, no-network container that every agent and gate command runs in — plus the one-tool MCP server that is the agent's only way to reach it.
 
 ## Flows
 
-- [Issue to PR](flows/issue-to-pr.md) — End-to-end path from a `kontinuum:ready` GitHub issue to an open pull request — poll, claim, worktree, sandbox, gate, docs, PR, CI reconciliation.
+- [Issue to PR](flows/issue-to-pr.md) — End-to-end path from a `kontinuum:ready` GitHub issue to an open pull request — poll, claim, worktree, sandbox, plan, gate, docs, PR, CI reconciliation.
 - [Living-Docs Maintenance](flows/living-docs-maintenance.md) — How the repo's living docs get seeded once and then refreshed in the same PR as the code change — Kontinuum computes the diff, the agent drafts, Kontinuum commits.
 
 ## Decisions (ADR)

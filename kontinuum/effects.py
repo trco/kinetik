@@ -34,6 +34,16 @@ def scan_diff(diff: str) -> list[str]:
     return violations
 
 
+def scan_worktree(workdir: str) -> list[str]:
+    """Same guard for a push that skips `propose()`: scan everything pending in the worktree.
+
+    The plan-first PR is agent-written content that never passes through the pipeline's scan, and
+    no push may leave unscanned. Stages as `open_pr` does, so it sees exactly what would be pushed.
+    """
+    git(workdir, "add", "-A")
+    return scan_diff(git(workdir, "diff", "--cached"))
+
+
 def open_pr(workdir: str, repo: str, branch: str, title: str, body: str, base: str) -> str:
     """Commit the worktree (detached HEAD) and push it to `branch`, open a PR. Returns the PR URL.
 
