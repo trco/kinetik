@@ -295,11 +295,15 @@ bot_login:   uros                 # only this author's claim markers are trusted
 agent:       claude               # or: demo   (required for `run`)
 assignee:    uros                 # optional — personal queue; omit for the shared queue
 repos:
-  - trco/kontinuum
-  - trco/other-project
+  - trco/kontinuum                # a plain string means "all defaults"
+  - repo:    trco/other-project   # or a mapping, for per-repo settings:
+    plugins: [living-docs]        #   which UNIVERSAL (K-bundled) plugins are on (default: all; [] = none)
+    agent:   demo                 #   overrides the machine-level `agent:` for this repo
 lease_min:   60
 poll_sec:    300
 ```
+The repo's own `.claude/` is auto-loaded by the agent CLI and needs no declaration here — `plugins:`
+governs only what K injects (§16.1).
 
 `<repo>/.kontinuum/verify.yaml` (per repo, human-confirmed at onboarding — the trust anchor):
 ```yaml

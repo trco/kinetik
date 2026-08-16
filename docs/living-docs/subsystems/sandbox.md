@@ -38,7 +38,7 @@ Two modes, one identical lockdown (`_flags()` is the single source of both):
   `KONTINUUM_SANDBOX_CID`. `kontinuum/sandbox_mcp.py:42` — the three JSON-RPC methods.
 - `kontinuum/agent.py:96-101` — where the box is started and its container id is injected into the
   MCP server's env; `kontinuum/agent.py:110-112` — Bash disabled, only this tool allowed.
-- `kontinuum/loop.py:124` and `kontinuum/loop.py:137` — the two boxes a task creates.
+- `kontinuum/loop.py:127` and `kontinuum/loop.py:140` — the two boxes a task creates.
 - `kontinuum/pipeline.py:46` — the gate runs in its own one-off box, *not* the agent's.
 - `tests/test_sandbox.py:23-44` — the isolation probes (env leak, egress, `/work` writability,
   persistence). They need a live Docker daemon and skip without one.
@@ -46,13 +46,13 @@ Two modes, one identical lockdown (`_flags()` is the single source of both):
 ## Gotchas / non-obvious
 
 - **Setup is online, everything after it is not.** `recipe.setup` runs with `--network bridge`,
-  hardcoded at `kontinuum/loop.py:124` — it is repo-authored and deterministic, so it is trusted to
+  hardcoded at `kontinuum/loop.py:127` — it is repo-authored and deterministic, so it is trusted to
   fetch deps. `recipe.network` (default `none`) governs only the *agent + gate* box. Widening the
   recipe's `network` to `bridge` removes control #1 for the untrusted half; prefer baking deps into
   `image` or installing them in `setup`.
 - **Deps must land under `/work`.** The gate gets a fresh container, so anything installed into the
   agent's persistent box outside the mount is gone by gate time. This is why the onboarding prompt
-  insists on e.g. `pip install --target /work/.deps` (`kontinuum/loop.py:272`).
+  insists on e.g. `pip install --target /work/.deps` (`kontinuum/loop.py:276`).
 - **Git does not work inside the box.** Only `workdir` is mounted; a worktree's `.git` is a *file*
   pointing at the cache clone, which is not. All git runs host-side in `pipeline.py` / `effects.py`
   — by design (git is a credentialed effect), but it surprises agents that try `git status`.
