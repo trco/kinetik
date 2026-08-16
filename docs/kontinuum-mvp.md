@@ -158,7 +158,7 @@ resolve_owner(log, now):                                # FIRST claimer at the t
 - **Heartbeat during the task:** a background thread refreshes the lease (~LEASE/3) for the whole run, so a long agent task can't lose the claim; crash ⇒ heartbeat stops ⇒ lease lapses ⇒ any K reclaims at `epoch+1`.
 - **Human guard:** before every effect, `still_owns` (= `resolve_owner == me`) **and** the `hold`/`blocked` label are re-checked; if either says stop, K releases and opens no PR.
 - **Recovery:** `poll_workable` returns `ready` **and** `claimed` issues, so a crashed-mid-task `claimed` issue is re-picked once its lease lapses.
-- Labels (`ready|claimed|pr-open|blocked|needs-triage|hold|paused`) are bootstrapped by `kontinuum init-labels` (run automatically at `run` startup).
+- Labels (`ready|claimed|pr-open|blocked|needs-triage|hold|paused|plan-first`) are bootstrapped by `kontinuum init-labels` (run automatically at `run` startup).
 
 ---
 
@@ -219,6 +219,7 @@ claim_and_run:
     guard: hold/blocked label or not owner -> release, bail
     worktree off the cached clone (fresh branch off default)
     [optional] setup step WITH network installs deps (kept out of the diff)
+    plan-first label + no merged plan -> plan-only PR, needs-triage, STOP (human approves by merging)
     ┌─ propose() — retry <=3, feedback accumulated ───────────────────┐
     │  agent (claude CLI): edit files; run commands via the box tool  │
     │  gate (offline, in the box)  ->  fail: feedback -> retry        │
@@ -249,6 +250,7 @@ claim_and_run:
   blocked            →  retries/CI exhausted, PR closed-unmerged, or persistent error → human
   needs-triage       →  producer/human unsure → human promotes
   hold / paused      →  human override: stop working this issue / this repo
+  plan-first         →  human override: plan-only PR first; merge it + re-label ready to approve
   (labels removed)   →  merged/closed by a human
 ```
 

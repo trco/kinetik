@@ -15,10 +15,11 @@ from datetime import datetime, timedelta
 
 from kontinuum.agent import ClaudeAgentRunner
 from kontinuum.ci import summarize_checks
-from kontinuum.effects import open_pr
+from kontinuum.effects import open_pr, scan_worktree
 from kontinuum.github import GitHubIssueQueue, gh
 from kontinuum.livingdocs import has_living_docs, maintain as maintain_living_docs, seed as seed_living_docs
 from kontinuum.pipeline import Task, propose
+from kontinuum.plan import draft as draft_plan, existing_plan, plan_first
 from kontinuum.plugins import inject, injected
 from kontinuum.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
 from kontinuum.recipe import load_recipe
@@ -101,6 +102,48 @@ def pr_body(number: int, proposal, reviewed: bool) -> str:
             f"---\n🤖 Kontinuum — {checks} (attempt {proposal.attempts})")
 
 
+def plan_pr_body(number: int) -> str:
+    """Plan-only PR. Deliberately no `Closes #N` — merging the plan approves it, it doesn't finish it."""
+    return (f"## Summary\nProposed implementation plan for #{number}, drafted before any code "
+            f"(`kontinuum:plan-first`).\n\n"
+            f"**To approve:** merge this PR, then set the issue back to `kontinuum:ready` — Kontinuum "
+            f"implements against the merged plan. To reject, close it and edit the issue.\n\n"
+            f"Refs #{number}\n\n---\n🤖 Kontinuum — plan only, no code changes")
+
+
+def plan_first_pr(queue, me, agent, workdir: str, task: Task, base: str) -> str | None:
+    """The `kontinuum:plan-first` detour (§16.1): propose a plan, then stop and wait for a human.
+
+    Ends the issue on `needs-triage` — its existing meaning, "a human promotes this" — so K stops
+    polling it until the human has merged the plan and re-labelled `ready`. Idempotent like the main
+    path: an already-open plan PR is reused rather than redrafted.
+    """
+    branch = f"kontinuum/plan-{queue.number}"
+    open_plan_pr = _find_open_pr(queue.repo, branch)
+    if open_plan_pr:                                      # already proposed, still unmerged -> just wait
+        queue.set_label("needs-triage")
+        return open_plan_pr
+    if draft_plan(agent, workdir, task) is None:
+        queue.set_label("blocked")
+        queue.comment("Kontinuum could not draft a plan for this issue — needs a human.")
+        return None
+    secrets = scan_worktree(workdir)                      # nothing reaches GitHub unscanned (§8)
+    if secrets:
+        queue.set_label("blocked")
+        queue.comment(f"Kontinuum's draft plan was blocked by the secret-scan ({', '.join(secrets)}).")
+        return None
+    now = datetime.utcnow()                               # §7 guard: still ours + not stopped, before any effect
+    if any(l in queue.labels() for l in STOP_LABELS) or not still_owns(queue, me, now):
+        release_if_mine(queue, me, now)
+        return None
+    url = open_pr(workdir, queue.repo, branch, f"Plan: {task.title} (#{queue.number})",
+                  plan_pr_body(queue.number), base)
+    queue.comment(f"Kontinuum proposed a plan before coding: {url}\n"
+                  f"Merge it to approve, then set `kontinuum:ready` and Kontinuum will implement it.")
+    queue.set_label("needs-triage")
+    return url
+
+
 def build_executor(agent, reviewer=None):
     """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
     def execute(queue, me):
@@ -134,6 +177,11 @@ def build_executor(agent, reviewer=None):
                     f.write("\n".join(sorted(excluded)) + "\n")
             info = json.loads(gh("issue", "view", str(queue.number), "--repo", queue.repo, "--json", "title,body"))
             task = Task(queue.number, info.get("title", ""), info.get("body", ""))
+            # plan-first: propose the plan alone and stop. Once merged it is on the base branch, so
+            # `existing_plan` sees it here and the agent implements against it (§16.1).
+            # ponytail: pays for `setup` it doesn't need, to keep deps/plugins out of the plan PR.
+            if plan_first(queue.labels()) and not existing_plan(workdir, queue.number):
+                return plan_first_pr(queue, me, agent, workdir, task, base)
             sandbox = Sandbox(recipe.image, workdir, recipe.network)   # agent + gate: offline by default
             proposal = propose(sandbox, task, recipe.gate, agent, reviewer)
             if proposal is None:

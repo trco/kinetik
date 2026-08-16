@@ -9,7 +9,7 @@ sources:
 last_verified:
   date: 2026-08-16
   sha: seed
-related: [subsystems/agent-seam, flows/issue-to-pr]
+related: [subsystems/agent-seam, subsystems/planning, flows/issue-to-pr]
 ---
 
 ## What it does
@@ -39,11 +39,11 @@ and rebuilds `INDEX.md` from all frontmatter.
 - `kontinuum/livingdocs.py:28` — `seed()`: invokes `/docs-seed`, returns whether docs now exist.
 - `kontinuum/livingdocs.py:45` — `changed_paths()`: the git half of the split (`git status --porcelain -z`).
 - `kontinuum/livingdocs.py:64` — `maintain()`: invokes `/docs-update <paths>`.
-- `kontinuum/loop.py:146` — where maintenance is called inside `build_executor`'s `execute()`; note it
+- `kontinuum/loop.py:194` — where maintenance is called inside `build_executor`'s `execute()`; note it
   sits *after* the §7 ownership guard and *before* `open_pr`, so docs land in the same commit.
-- `kontinuum/loop.py:277` / `kontinuum/loop.py:305` — `onboard()` and `seed_docs_pr()`, the two seeding callers.
+- `kontinuum/loop.py:325` / `kontinuum/loop.py:353` — `onboard()` and `seed_docs_pr()`, the two seeding callers.
 - `kontinuum/cli.py:46` — the `seed-docs` subcommand.
-- `kontinuum/agent.py:121` — `run_command()`: the headless slash-command capability. `Task` is allowed
+- `kontinuum/agent.py:124` — `run_command()`: the headless slash-command capability. `Task` is allowed
   (for the fan-out), `Bash` is not — and the ban propagates to sub-agents.
 - `kontinuum/plugins.py:23` / `kontinuum/plugins.py:46` — `inject()` and the `injected()` context manager.
 - `kontinuum/bundled_plugins/commands/docs-update.md:12` — the affected-vs-gap page selection.
@@ -53,17 +53,24 @@ and rebuilds `INDEX.md` from all frontmatter.
 
 - **Docs are best-effort and must never block the code PR.** Every failure path is swallowed:
   no `run_command` capability → silent no-op; exception or timeout → logged warning and continue
-  (`kontinuum/livingdocs.py:80`, `kontinuum/agent.py:135`). Locked in by
-  `tests/test_livingdocs.py:75`.
-- **A doc pass must not feed on itself.** `docs/living-docs/` and `.claude/` are stripped from the
-  changed-path list (`kontinuum/livingdocs.py:20`), otherwise the docs written by one pass would look
-  like source changes to the next. Injected plugins are also already invisible via
-  `.git/info/exclude`, so the prefix filter is belt-and-braces.
+  (`kontinuum/livingdocs.py:80`, `kontinuum/agent.py:139`). Locked in by
+  `tests/test_livingdocs.py:77`.
+- **A doc pass must not feed on itself.** `docs/living-docs/`, `docs/plans/` and `.claude/` are
+  stripped from the changed-path list (`kontinuum/livingdocs.py:20`, pinned by
+  `tests/test_livingdocs.py:29`). Living docs written by one pass would otherwise look like source
+  changes to the next; a plan file is the same trap from the other side — a plan **describes** a
+  change, it isn't part of it, so leaving it in would have the docs agent document the plan instead
+  of the code. Injected plugins are also already invisible via `.git/info/exclude`, so the prefix
+  filter is belt-and-braces there.
+- **Plans and doc updates now ride in the same PR as the code**, which is exactly why the exclusion
+  matters: per-issue planning writes `docs/plans/<date>-issue-<N>-<slug>.md` in the same edit pass
+  (see [subsystems/planning](../subsystems/planning.md)), so without the prefix the two narrative
+  artifacts would chase each other.
 - **The changed-path list is truncated** to the first 100 paths (`kontinuum/livingdocs.py:79`) — the
   arguments go into a prompt, so a huge refactor gives the agent a partial view of what moved.
 - **The plugin must be injected before a slash command can resolve.** Claude Code loads `.claude/`
   from its cwd; `/docs-seed` in a worktree with no injection is just unknown text. `execute()` folds
-  injection into its own exclude (`kontinuum/loop.py:120`); the edit-only flows use the `injected()`
+  injection into its own exclude (`kontinuum/loop.py:163`); the edit-only flows use the `injected()`
   context manager instead. Restoring the exclude on exit matters — it is shared across worktrees of a
   cached clone.
 - **Repo-native `.claude/` files always win** (`kontinuum/plugins.py:38`): a target repo that has its
@@ -75,9 +82,10 @@ and rebuilds `INDEX.md` from all frontmatter.
   single package, so `kontinuum/**` would flag every page on every change. See
   `docs/living-docs/README.md:10`.
 - Maintenance only runs when something source-level actually changed; a clean tree issues no command
-  (`tests/test_livingdocs.py:63`).
+  (`tests/test_livingdocs.py:65`).
 
 ## See also
 
 - [subsystems/agent-seam](../subsystems/agent-seam.md) — the `run_command` capability and the tool allowlist.
+- [subsystems/planning](../subsystems/planning.md) — the plan artifact that shares the PR and is excluded here.
 - [flows/issue-to-pr](issue-to-pr.md) — the surrounding execute() pipeline this hooks into.

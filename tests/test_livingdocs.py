@@ -26,14 +26,16 @@ def test_changed_paths_reports_edits_and_new_files(tmp_path):
     assert set(changed_paths(r)) == {"a.py", "b.py"}
 
 
-def test_changed_paths_excludes_docs_and_plugins(tmp_path):
+def test_changed_paths_excludes_docs_plans_and_plugins(tmp_path):
     r = _repo(tmp_path)
     (tmp_path / "a.py").write_text("x = 2\n")
     (tmp_path / ".claude" / "skills").mkdir(parents=True)
     (tmp_path / ".claude" / "skills" / "x.md").write_text("k")
     (tmp_path / "docs" / "living-docs").mkdir(parents=True)
     (tmp_path / "docs" / "living-docs" / "INDEX.md").write_text("i")
-    assert set(changed_paths(r)) == {"a.py"}              # .claude/ and docs/living-docs/ dropped
+    (tmp_path / "docs" / "plans").mkdir(parents=True)
+    (tmp_path / "docs" / "plans" / "2026-08-16-issue-7-x.md").write_text("p")
+    assert set(changed_paths(r)) == {"a.py"}              # .claude/, living docs and plans dropped
 
 
 def test_maintain_noops_without_capability(tmp_path):

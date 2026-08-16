@@ -53,7 +53,7 @@ def gh(*args: str) -> str:
 
 
 LABEL_COLORS = {"ready": "0e8a16", "claimed": "fbca04", "pr-open": "1d76db", "blocked": "b60205",
-                "needs-triage": "d4c5f9", "hold": "e99695", "paused": "cccccc"}
+                "needs-triage": "d4c5f9", "hold": "e99695", "paused": "cccccc", "plan-first": "c2e0c6"}
 
 
 def init_labels(repo: str) -> None:

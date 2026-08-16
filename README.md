@@ -62,4 +62,7 @@ kontinuum status                          # read-only: what K owns / is working 
 ```
 
 Label an issue `kontinuum:ready` to queue it. `kontinuum:hold` on an issue, or an open issue
-labelled `kontinuum:paused`, stops Kontinuum on that issue or repo.
+labelled `kontinuum:paused`, stops Kontinuum on that issue or repo. `kontinuum:plan-first` makes
+Kontinuum open a plan-only PR and wait: merge it to approve the plan, then set `kontinuum:ready`
+again and it implements against the merged plan. Without that label it plans and implements in one
+PR (and skips the plan file entirely when the issue is trivial).

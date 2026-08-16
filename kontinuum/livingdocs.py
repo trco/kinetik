@@ -17,7 +17,7 @@ from kontinuum.gitcmd import git
 
 logger = logging.getLogger("kontinuum")
 
-_SKIP_PREFIXES = ("docs/living-docs/", ".claude/")   # never treat docs or injected plugins as source
+_SKIP_PREFIXES = ("docs/living-docs/", "docs/plans/", ".claude/")   # docs, plans and injected plugins aren't source
 LIVING_DOCS = "docs/living-docs"
 
 
@@ -48,7 +48,7 @@ def changed_paths(workdir: str) -> list[str]:
     Reads `git status --porcelain -z --untracked-files=all`, so it lists files individually (not
     collapsed dirs) and respects `.git/info/exclude` — injected plugins and installed deps are
     already excluded and never appear. Living docs and `.claude/` are dropped so a doc-only pass
-    can't feed on itself.
+    can't feed on itself; `docs/plans/` too — a plan describes the change, it isn't part of it.
     """
     out = git(workdir, "status", "--porcelain", "-z", "--untracked-files=all")
     paths = []
