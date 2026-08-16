@@ -20,6 +20,17 @@ from kontinuum.loop import (
 )
 
 
+def _executor(agent: str | None, plugins):
+    """The executor for one repo: its own agent (or the machine's) and its universal-plugin set."""
+    if agent == "claude":
+        return build_executor(ClaudeAgentRunner(), ClaudeReviewer(), plugins)
+    if agent == "demo":
+        return build_executor(DemoAgent(), plugins=plugins)
+    # the stub never advances an issue -> would re-claim forever
+    raise SystemExit("kontinuum run: set `agent: claude` in the config, per-machine or per-repo "
+                     "(or `demo` to exercise the pipeline)")
+
+
 def main(argv=None):
     import argparse
     import time
@@ -59,26 +70,23 @@ def main(argv=None):
         seed_docs_pr(args.repo, ClaudeAgentRunner())
         return
     if args.cmd == "status":
-        for repo in load_config(args.config).repos:
-            status(repo)
+        for r in load_config(args.config).repos:
+            status(r.repo)
         return
 
     cfg = load_config(args.config, {
         "instance_id": args.instance_id, "bot_login": args.bot_login, "assignee": args.assignee,
         "agent": args.agent, "repos": args.repos, "lease_min": args.lease_min, "poll_sec": args.poll_sec,
     })
-    if cfg.agent == "claude":
-        executor = build_executor(ClaudeAgentRunner(), ClaudeReviewer())
-    elif cfg.agent == "demo":
-        executor = build_executor(DemoAgent())
-    else:                                                 # the stub never advances an issue -> would re-claim forever
-        raise SystemExit("kontinuum run: set `agent: claude` in the config (or `demo` to exercise the pipeline)")
-    for repo in cfg.repos:                                # ensure kontinuum:* labels exist before we set them
+    # one executor per repo: per-repo `agent:`/`plugins:` win over the machine-level ones. Built up
+    # front so a repo with no usable agent fails fast, before the daemon starts.
+    executors = {r.repo: _executor(r.agent or cfg.agent, r.plugins) for r in cfg.repos}
+    for repo in executors:                                # ensure kontinuum:* labels exist before we set them
         init_labels(repo)
     lease = timedelta(minutes=cfg.lease_min)
     errors: dict = {}                                      # per-issue consecutive-error counts, across passes
     while True:  # ponytail: bare daemon; heartbeats/signals/recovery come when execute() is real
-        for repo in cfg.repos:                             # one K, several repos
+        for repo, executor in executors.items():           # one K, several repos
             try:
                 if is_paused(repo):                        # kill switch: kontinuum:paused halts this repo
                     logger.info("%s: paused", repo)

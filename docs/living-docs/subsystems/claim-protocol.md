@@ -71,4 +71,4 @@ The split exists so the correctness-critical part has no I/O and can be property
 
 - `docs/kontinuum-mvp.md` §7 — the spec this implements (note the corrected tie-break above).
 - `kontinuum/loop.py:71` — `LeaseHeartbeat`, the background thread that keeps the lease alive for the duration of a task; interval defaults to `lease/3` at `kontinuum/loop.py:41`.
-- `kontinuum/loop.py:113` — the guard pattern: `hold`/`blocked` label **or** lost lease ⇒ release and open no PR.
+- `kontinuum/loop.py:116` — the guard pattern: `hold`/`blocked` label **or** lost lease ⇒ release and open no PR.

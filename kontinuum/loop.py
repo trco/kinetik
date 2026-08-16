@@ -101,8 +101,11 @@ def pr_body(number: int, proposal, reviewed: bool) -> str:
             f"---\n🤖 Kontinuum — {checks} (attempt {proposal.attempts})")
 
 
-def build_executor(agent, reviewer=None):
-    """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block)."""
+def build_executor(agent, reviewer=None, plugins=None):
+    """Build the real execute(): clone -> read recipe -> sandbox -> propose -> open PR (or block).
+
+    `plugins` is the repo's universal-plugin selection (None = all bundled ones).
+    """
     def execute(queue, me):
         branch = f"kontinuum/issue-{queue.number}"
         existing = _find_open_pr(queue.repo, branch)      # crash-retry: PR already open -> idempotent, don't redo
@@ -117,7 +120,7 @@ def build_executor(agent, reviewer=None):
         workdir, cache = _new_worktree(queue.repo, base)
         exclude_path = exclude_backup = None
         try:
-            excluded = set(inject(workdir))              # bundled K plugins into .claude/ (repo-native wins)
+            excluded = set(inject(workdir, plugins))     # bundled K plugins into .claude/ (repo-native wins)
             recipe = load_recipe(workdir)                # per-repo setup/gate/image
             if recipe.setup:                             # trusted install WITH network, before the isolated box
                 before = _untracked_paths(workdir)
@@ -143,7 +146,8 @@ def build_executor(agent, reviewer=None):
             if any(l in queue.labels() for l in STOP_LABELS) or not still_owns(queue, me, now):
                 release_if_mine(queue, me, now)          # hold/blocked or lost lease -> back off, open no PR
                 return None
-            maintain_living_docs(agent, workdir)         # best-effort: doc updates ride in this same PR
+            if plugins is None or "living-docs" in plugins:   # the docs pass belongs to that plugin
+                maintain_living_docs(agent, workdir)     # best-effort: doc updates ride in this same PR
             body = pr_body(queue.number, proposal, reviewed=reviewer is not None)
             url = open_pr(workdir, queue.repo, branch, f"{task.title} (#{queue.number})", body, base)
             queue.comment(f"Kontinuum opened {url}")

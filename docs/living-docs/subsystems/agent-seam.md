@@ -16,8 +16,8 @@ related: [subsystems/sandbox, subsystems/execution-pipeline, flows/living-docs-m
 
 The seam between Kontinuum's orchestration and whatever model actually writes code. Two ports:
 `AgentRunner.run(sandbox, task, feedback) -> pr_body` edits the worktree; `Reviewer.review(diff, task) -> Verdict`
-gives a read-only opinion. `ClaudeAgentRunner` / `ClaudeReviewer` are the only shipped adapters; `cli.py:70`
-maps the config's `agent:` name to them.
+gives a read-only opinion. `ClaudeAgentRunner` / `ClaudeReviewer` are the only shipped adapters; `cli.py:23`
+maps the config's `agent:` name to them — the repo's own `agent:` first, else the machine-level one.
 
 **Why Protocols, not base classes** (`kontinuum/agent.py:53`, `:65`): the rest of K is duck-typed (queues,
 sandboxes), and the fakes in `tests/fakes.py:37`, `:49` implement the ports without importing or subclassing
@@ -37,14 +37,20 @@ CLI on the contract, the **sandbox** is the boundary.
 `run_command(workdir, command)` (`agent.py:121`) is an optional extra capability, deliberately *not* on the
 Protocol — callers probe it with `getattr` (`kontinuum/livingdocs.py:35`, `:72`) so an adapter without it just
 skips docs work. It runs an injected slash command headless (`/docs-seed`, `/docs-update`); the prompt lives in
-`kontinuum/bundled_plugins/commands/`, not in Python. It grants `Task` (for the `living-docs-maintainer`
-fan-out) but no Bash and no sandbox — a docs pass runs no commands, and K owns git.
+`kontinuum/bundled_plugins/living-docs/commands/`, not in Python. It grants `Task` (for the
+`living-docs-maintainer` fan-out) but no Bash and no sandbox — a docs pass runs no commands, and K owns git.
 
-`plugins.inject()` (`kontinuum/plugins.py:23`) copies the bundle into `<worktree>/.claude/`, mirroring the
+`plugins.inject()` (`kontinuum/plugins.py:33`) copies the bundle into `<worktree>/.claude/`, mirroring the
 bundle layout, and returns the injected relative paths so the caller can git-exclude them. `execute()` folds
-them into its own exclude alongside installed deps (`kontinuum/loop.py:120`, `:130`); the edit-only flows use
-the `injected()` context manager instead (`plugins.py:46`, used at `loop.py:293`, `:313`). Net effect: the
+them into its own exclude alongside installed deps (`kontinuum/loop.py:123`, `:133`); the edit-only flows use
+the `injected()` context manager instead (`plugins.py:56`, used at `loop.py:297`, `:317`). Net effect: the
 plugin ships with K (same version everywhere), is available to the agent for the run, and never reaches the PR.
+
+**One bundle directory per plugin** (`kontinuum/bundled_plugins/<plugin>/`, each mirroring `.claude/`).
+`available()` (`plugins.py:25`) is just that listing, so adding a plugin is adding a directory — no code
+change and no manifest to drift. `core/` is excluded from it: the baseline agent context always ships. The
+rest are toggled per repo (`repos: [{repo, plugins}]`), which is what `inject()`'s `plugins` argument carries
+— `None` = all, `[]` = core only.
 
 ## Key entry points
 
@@ -52,8 +58,8 @@ plugin ships with K (same version everywhere), is available to the agent for the
 - Runner + tool flags: `kontinuum/agent.py:96`; injected-command path: `kontinuum/agent.py:121`
 - Reviewer: `kontinuum/agent.py:145`; denied-tool list `kontinuum/agent.py:50`
 - Task prompt (PR-body contract): `kontinuum/agent.py:72`
-- Injection: `kontinuum/plugins.py:23`; scoped variant `kontinuum/plugins.py:46`
-- Callers: `kontinuum/pipeline.py:45` (run/gate loop), `kontinuum/loop.py:120` (injection + exclude), `kontinuum/cli.py:70` (adapter selection)
+- Injection: `kontinuum/plugins.py:33`; plugin listing `kontinuum/plugins.py:25`; scoped variant `kontinuum/plugins.py:56`
+- Callers: `kontinuum/pipeline.py:45` (run/gate loop), `kontinuum/loop.py:123` (injection + exclude), `kontinuum/cli.py:23` (adapter selection)
 
 ## Gotchas / non-obvious
 
@@ -64,12 +70,12 @@ plugin ships with K (same version everywhere), is available to the agent for the
   tool denied (`agent.py:154`). This is load-bearing, not stylistic: review happens *after* the diff is staged
   and secret-scanned (`pipeline.py:48-53`), and `open_pr` re-runs `git add -A` (`effects.py:44`) — so anything
   a reviewer wrote would ride into the PR unreviewed and unscanned.
-- **Repo-native `.claude/` wins per file, not per tree** (`plugins.py:37`, `tests/test_plugins.py:20`). A repo
+- **Repo-native `.claude/` wins per file, not per tree** (`plugins.py:48`, `tests/test_plugins.py:32`). A repo
   shipping its own `.claude/skills/living-docs.md` keeps it, and that path is *not* returned — correctly, since
   it is tracked and belongs in the repo's own diff. The flip side: a stale same-named repo file silently
   shadows K's newer bundled one, so "same version on every machine" only holds for files the repo doesn't own.
 - **The git exclude is shared across worktrees of the cached clone** (`worktree.py:45` asks git for the real
-  path). Both injection paths restore it in a `finally` (`plugins.py:63`, `loop.py:153`); a leaked entry would
+  path). Both injection paths restore it in a `finally` (`plugins.py:74`, `loop.py:156`); a leaked entry would
   hide a target repo's *own* `.claude/` files from later commits on unrelated issues.
 - **Docs work is best-effort by design.** `run_command` swallows timeouts (`agent.py:135`) and `livingdocs`
   swallows exceptions — a failed docs pass never blocks the code PR.
