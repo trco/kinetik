@@ -39,15 +39,15 @@ and rebuilds `INDEX.md` from all frontmatter.
 - `kontinuum/livingdocs.py:28` — `seed()`: invokes `/docs-seed`, returns whether docs now exist.
 - `kontinuum/livingdocs.py:45` — `changed_paths()`: the git half of the split (`git status --porcelain -z`).
 - `kontinuum/livingdocs.py:64` — `maintain()`: invokes `/docs-update <paths>`.
-- `kontinuum/loop.py:146` — where maintenance is called inside `build_executor`'s `execute()`; note it
+- `kontinuum/loop.py:150` — where maintenance is called inside `build_executor`'s `execute()`; note it
   sits *after* the §7 ownership guard and *before* `open_pr`, so docs land in the same commit.
-- `kontinuum/loop.py:277` / `kontinuum/loop.py:305` — `onboard()` and `seed_docs_pr()`, the two seeding callers.
-- `kontinuum/cli.py:46` — the `seed-docs` subcommand.
+- `kontinuum/loop.py:281` / `kontinuum/loop.py:309` — `onboard()` and `seed_docs_pr()`, the two seeding callers.
+- `kontinuum/cli.py:57` — the `seed-docs` subcommand.
 - `kontinuum/agent.py:121` — `run_command()`: the headless slash-command capability. `Task` is allowed
   (for the fan-out), `Bash` is not — and the ban propagates to sub-agents.
-- `kontinuum/plugins.py:23` / `kontinuum/plugins.py:46` — `inject()` and the `injected()` context manager.
-- `kontinuum/bundled_plugins/commands/docs-update.md:12` — the affected-vs-gap page selection.
-- `kontinuum/bundled_plugins/agents/living-docs-maintainer.md:4` — the sub-agent's `tools:` line.
+- `kontinuum/plugins.py:33` / `kontinuum/plugins.py:56` — `inject()` and the `injected()` context manager.
+- `kontinuum/bundled_plugins/living-docs/commands/docs-update.md:12` — the affected-vs-gap page selection.
+- `kontinuum/bundled_plugins/living-docs/agents/living-docs-maintainer.md:4` — the sub-agent's `tools:` line.
 
 ## Gotchas / non-obvious
 
@@ -63,10 +63,15 @@ and rebuilds `INDEX.md` from all frontmatter.
   arguments go into a prompt, so a huge refactor gives the agent a partial view of what moved.
 - **The plugin must be injected before a slash command can resolve.** Claude Code loads `.claude/`
   from its cwd; `/docs-seed` in a worktree with no injection is just unknown text. `execute()` folds
-  injection into its own exclude (`kontinuum/loop.py:120`); the edit-only flows use the `injected()`
+  injection into its own exclude (`kontinuum/loop.py:123`); the edit-only flows use the `injected()`
   context manager instead. Restoring the exclude on exit matters — it is shared across worktrees of a
   cached clone.
-- **Repo-native `.claude/` files always win** (`kontinuum/plugins.py:38`): a target repo that has its
+- **A repo can turn this whole flow off** — `plugins:` in the machine config decides whether the
+  `living-docs` bundle is injected, and the maintenance call is gated on the same selection
+  (`kontinuum/loop.py:149`), so a repo without the plugin doesn't get `/docs-update` fired into a
+  worktree where the command does not exist. Seeding (`onboard`, `seed-docs`) takes an explicit
+  `--repo` and does not read the config, so it always injects.
+- **Repo-native `.claude/` files always win** (`kontinuum/plugins.py:48`): a target repo that has its
   own `living-docs.md` skill keeps its conventions, and Kontinuum's copy is skipped.
 - **`sha: seed` on freshly drafted pages** is not a placeholder bug. The skill wants
   `last_verified.sha` = `git rev-parse --short HEAD`, but the drafting sub-agent has no shell; it

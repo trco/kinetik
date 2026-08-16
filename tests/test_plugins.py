@@ -6,15 +6,27 @@ import os
 import subprocess
 from pathlib import Path
 
-from kontinuum.plugins import inject
+from kontinuum.plugins import available, inject
 
 SEED = os.path.join(".claude", "skills", "kontinuum-context.md")
+DOCS = os.path.join(".claude", "skills", "living-docs.md")
+
+
+def test_living_docs_is_the_toggleable_plugin():
+    assert available() == ["living-docs"]                     # core is not listed — it always ships
 
 
 def test_inject_lands_the_bundle_and_returns_paths(tmp_path):
     injected = inject(str(tmp_path))
     assert SEED in injected                                   # the bundled seed skill was placed
     assert (tmp_path / ".claude" / "skills" / "kontinuum-context.md").is_file()
+
+
+def test_plugin_selection_narrows_what_lands(tmp_path):
+    assert inject(str(tmp_path / "off"), []) == [SEED]         # core only — living-docs is off here
+    assert DOCS in inject(str(tmp_path / "on"), ["living-docs"])
+    assert sorted(inject(str(tmp_path / "all"))) == sorted(inject(str(tmp_path / "named"),
+                                                                 ["living-docs"]))   # None = all
 
 
 def test_inject_never_overwrites_repo_native(tmp_path):

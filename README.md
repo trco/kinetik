@@ -33,11 +33,17 @@ instance_id: kontinuum/uros@laptop   # stamped in every claim-log entry
 bot_login:   uros                    # only this author's claim markers are trusted
 agent:       claude                  # or: demo (dry-runs the pipeline). Required for `run`.
 repos:
-  - trco/kontinuum
+  - trco/kontinuum                   # plain string = all defaults
+  - repo:    trco/other-project      # or a mapping, for per-repo settings:
+    plugins: [living-docs]           #   optional — universal K plugins on here (default: all)
+    agent:   demo                    #   optional — overrides the machine-level `agent:` above
 assignee:    uros                    # optional — personal queue; omit for the shared queue
 lease_min:   60                      # optional
 poll_sec:    300                     # optional
 ```
+
+`plugins:` lists only the **universal, K-bundled** plugins (today: `living-docs`); `[]` turns them
+all off. A repo's own `.claude/` is auto-loaded and needs no entry — and always wins per file.
 
 ## Per-repo recipe
 
