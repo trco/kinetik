@@ -5,8 +5,8 @@ from __future__ import annotations
 import itertools
 from datetime import datetime
 
-from kontinuum.claim import ClaimEntry, ClaimKind
-from kontinuum.pipeline import Verdict
+from kinetik.claim import ClaimEntry, ClaimKind
+from kinetik.pipeline import Verdict
 
 
 class FakeIssueQueue:
@@ -28,7 +28,7 @@ class FakeIssueQueue:
         self.label = label                                 # fake is exclusive by construction (one label)
 
     def labels(self) -> list[str]:
-        return [f"kontinuum:{self.label}"] if self.label else []
+        return [f"kinetik:{self.label}"] if self.label else []
 
     def comment(self, body: str) -> None:
         self.comments.append(body)

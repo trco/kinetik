@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from hypothesis import given
 from hypothesis import strategies as st
 
-from kontinuum.claim import ClaimEntry, ClaimKind, plan_claim, resolve_owner, owns
+from kinetik.claim import ClaimEntry, ClaimKind, plan_claim, resolve_owner, owns
 
 NOW = datetime(2026, 8, 13, 12, 0, 0)
 LIVE = NOW + timedelta(hours=1)

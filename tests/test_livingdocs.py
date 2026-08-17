@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from kontinuum.livingdocs import changed_paths, has_living_docs, maintain, seed
+from kinetik.livingdocs import changed_paths, has_living_docs, maintain, seed
 
 
 def _repo(tmp_path):

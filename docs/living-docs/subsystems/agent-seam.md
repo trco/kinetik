@@ -3,9 +3,9 @@ title: Agent Seam
 type: subsystem
 summary: The two duck-typed ports (AgentRunner, Reviewer), the Claude CLI adapter that edits on the host but runs commands through the sandbox, and the bundled `.claude/` plugin injection that stays out of the diff.
 sources:
-  - kontinuum/agent.py
-  - kontinuum/plugins.py
-  - kontinuum/bundled_plugins/**
+  - kinetik/agent.py
+  - kinetik/plugins.py
+  - kinetik/bundled_plugins/**
 last_verified:
   date: 2026-08-16
   sha: seed
@@ -14,39 +14,39 @@ related: [subsystems/sandbox, subsystems/execution-pipeline, flows/living-docs-m
 
 ## What it does
 
-The seam between Kontinuum's orchestration and whatever model actually writes code. Two ports:
+The seam between Kinetik's orchestration and whatever model actually writes code. Two ports:
 `AgentRunner.run(sandbox, task, feedback) -> pr_body` edits the worktree; `Reviewer.review(diff, task) -> Verdict`
 gives a read-only opinion. `ClaudeAgentRunner` / `ClaudeReviewer` are the only shipped adapters; `cli.py:23`
 maps the config's `agent:` name to them — the repo's own `agent:` first, else the machine-level one.
 
-**Why Protocols, not base classes** (`kontinuum/agent.py:53`, `:65`): the rest of K is duck-typed (queues,
+**Why Protocols, not base classes** (`kinetik/agent.py:53`, `:65`): the rest of K is duck-typed (queues,
 sandboxes), and the fakes in `tests/fakes.py:37`, `:49` implement the ports without importing or subclassing
 anything. `@runtime_checkable` buys one thing — `tests/test_agent.py:11` asserts real adapters *and* fakes
 satisfy the same `isinstance` check, so the fake can't silently drift from the contract. It checks method
 names only; the semantics (return even on failure, never touch anything outward) live in the docstrings and
 are enforced by the pipeline, not the type.
 
-**Split trust in the Claude adapter** (`kontinuum/agent.py:96`): reasoning and file edits run on the *host*
+**Split trust in the Claude adapter** (`kinetik/agent.py:96`): reasoning and file edits run on the *host*
 worktree — that's where the login lives and edits are cheap. Commands do not: `--disallowedTools Bash` plus
-`--allowedTools Read Edit Write mcp__kontinuum-sandbox__run` (`agent.py:110`) leaves the sandbox MCP `run`
+`--allowedTools Read Edit Write mcp__kinetik-sandbox__run` (`agent.py:110`) leaves the sandbox MCP `run`
 tool as the only way to execute anything, and that tool `docker exec`s into the credential-free, offline box
-(`kontinuum/sandbox_mcp.py:35`). `--strict-mcp-config` keeps the operator's own global MCP servers out of the
+(`kinetik/sandbox_mcp.py:35`). `--strict-mcp-config` keeps the operator's own global MCP servers out of the
 run. Read the containment caveat in the module docstring (`agent.py:14-28`): the flags keep a well-behaved
 CLI on the contract, the **sandbox** is the boundary.
 
 `run_command(workdir, command)` (`agent.py:121`) is an optional extra capability, deliberately *not* on the
-Protocol — callers probe it with `getattr` (`kontinuum/livingdocs.py:35`, `:72`) so an adapter without it just
+Protocol — callers probe it with `getattr` (`kinetik/livingdocs.py:35`, `:72`) so an adapter without it just
 skips docs work. It runs an injected slash command headless (`/docs-seed`, `/docs-update`); the prompt lives in
-`kontinuum/bundled_plugins/living-docs/commands/`, not in Python. It grants `Task` (for the
+`kinetik/bundled_plugins/living-docs/commands/`, not in Python. It grants `Task` (for the
 `living-docs-maintainer` fan-out) but no Bash and no sandbox — a docs pass runs no commands, and K owns git.
 
-`plugins.inject()` (`kontinuum/plugins.py:33`) copies the bundle into `<worktree>/.claude/`, mirroring the
+`plugins.inject()` (`kinetik/plugins.py:33`) copies the bundle into `<worktree>/.claude/`, mirroring the
 bundle layout, and returns the injected relative paths so the caller can git-exclude them. `execute()` folds
-them into its own exclude alongside installed deps (`kontinuum/loop.py:123`, `:133`); the edit-only flows use
+them into its own exclude alongside installed deps (`kinetik/loop.py:123`, `:133`); the edit-only flows use
 the `injected()` context manager instead (`plugins.py:56`, used at `loop.py:297`, `:317`). Net effect: the
 plugin ships with K (same version everywhere), is available to the agent for the run, and never reaches the PR.
 
-**One bundle directory per plugin** (`kontinuum/bundled_plugins/<plugin>/`, each mirroring `.claude/`).
+**One bundle directory per plugin** (`kinetik/bundled_plugins/<plugin>/`, each mirroring `.claude/`).
 `available()` (`plugins.py:25`) is just that listing, so adding a plugin is adding a directory — no code
 change and no manifest to drift. `core/` is excluded from it: the baseline agent context always ships. The
 rest are toggled per repo (`repos: [{repo, plugins}]`), which is what `inject()`'s `plugins` argument carries
@@ -54,12 +54,12 @@ rest are toggled per repo (`repos: [{repo, plugins}]`), which is what `inject()`
 
 ## Key entry points
 
-- Ports: `kontinuum/agent.py:53` (`AgentRunner`), `kontinuum/agent.py:65` (`Reviewer`)
-- Runner + tool flags: `kontinuum/agent.py:96`; injected-command path: `kontinuum/agent.py:121`
-- Reviewer: `kontinuum/agent.py:145`; denied-tool list `kontinuum/agent.py:50`
-- Task prompt (PR-body contract): `kontinuum/agent.py:72`
-- Injection: `kontinuum/plugins.py:33`; plugin listing `kontinuum/plugins.py:25`; scoped variant `kontinuum/plugins.py:56`
-- Callers: `kontinuum/pipeline.py:45` (run/gate loop), `kontinuum/loop.py:123` (injection + exclude), `kontinuum/cli.py:23` (adapter selection)
+- Ports: `kinetik/agent.py:53` (`AgentRunner`), `kinetik/agent.py:65` (`Reviewer`)
+- Runner + tool flags: `kinetik/agent.py:96`; injected-command path: `kinetik/agent.py:121`
+- Reviewer: `kinetik/agent.py:145`; denied-tool list `kinetik/agent.py:50`
+- Task prompt (PR-body contract): `kinetik/agent.py:72`
+- Injection: `kinetik/plugins.py:33`; plugin listing `kinetik/plugins.py:25`; scoped variant `kinetik/plugins.py:56`
+- Callers: `kinetik/pipeline.py:45` (run/gate loop), `kinetik/loop.py:123` (injection + exclude), `kinetik/cli.py:23` (adapter selection)
 
 ## Gotchas / non-obvious
 

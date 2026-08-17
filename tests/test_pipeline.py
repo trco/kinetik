@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from kontinuum.pipeline import Task, propose
-from kontinuum.sandbox import Sandbox
+from kinetik.pipeline import Task, propose
+from kinetik.sandbox import Sandbox
 from tests.fakes import FakeAgentRunner, FakeReviewer
 
 IMAGE = "alpine:latest"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from kontinuum.config import Repo, load_config
+from kinetik.config import Repo, load_config
 
 
 def _write(tmp_path, text: str) -> str:

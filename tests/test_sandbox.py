@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from kontinuum.sandbox import Sandbox
+from kinetik.sandbox import Sandbox
 
 IMAGE = "alpine:latest"
 

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from kontinuum.claim import ClaimKind, resolve_owner
-from kontinuum.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
+from kinetik.claim import ClaimKind, resolve_owner
+from kinetik.protocol import still_owns, attempt_claim, heartbeat, release_if_mine
 from tests.fakes import FakeIssueQueue
 
 NOW = datetime(2026, 8, 13, 12, 0, 0)

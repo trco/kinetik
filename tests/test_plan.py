@@ -4,16 +4,22 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from kontinuum import loop
-from kontinuum.agent import _prompt
-from kontinuum.pipeline import Task
-from kontinuum.plan import draft, existing_plan, plan_first, plan_path, plan_prompt
-from kontinuum.protocol import attempt_claim
+from kinetik import loop
+from kinetik.agent import _prompt
+from kinetik.pipeline import Task
+from kinetik.plan import draft, existing_plan, plan_first, plan_path, plan_prompt
+from kinetik.protocol import attempt_claim
 from tests.fakes import FakeIssueQueue
 
 TASK = Task(7, "Add a retry to the fetcher", "body")
 NOW = datetime(2026, 8, 16, 12, 0, 0)
 LEASE = timedelta(hours=1)
+
+
+class _FrozenClock(datetime):                             # freeze loop's utcnow so the test lease stays live
+    @classmethod
+    def utcnow(cls):
+        return NOW
 
 
 def _write_plan(tmp_path, name):
@@ -64,8 +70,8 @@ def test_implement_prompt_follows_an_approved_plan_instead_of_writing_one():
 
 
 def test_plan_first_label():
-    assert plan_first(["kontinuum:ready", "kontinuum:plan-first"])
-    assert not plan_first(["kontinuum:ready"])
+    assert plan_first(["kinetik:ready", "kinetik:plan-first"])
+    assert not plan_first(["kinetik:ready"])
 
 
 def test_draft_needs_an_agent_that_can_run_a_plan_pass(tmp_path):
@@ -125,6 +131,7 @@ def _patch_effects(monkeypatch, existing_pr=None, secrets=()):
     monkeypatch.setattr(loop, "_find_open_pr", lambda repo, branch: existing_pr)
     monkeypatch.setattr(loop, "scan_worktree", lambda workdir: list(secrets))
     monkeypatch.setattr(loop, "open_pr", lambda *a: "https://pr/plan")
+    monkeypatch.setattr(loop, "datetime", _FrozenClock)   # lease guard reads real time; pin it to NOW
 
 
 def test_plan_first_pr_opens_a_plan_pr_and_hands_back_to_a_human(monkeypatch, tmp_path):
