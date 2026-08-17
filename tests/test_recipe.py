@@ -1,14 +1,14 @@
-"""Per-repo recipe loads from .kontinuum/verify.yaml; base defaults; missing required fails fast."""
+"""Per-repo recipe loads from .kinetik/verify.yaml; base defaults; missing required fails fast."""
 
 from __future__ import annotations
 
 import pytest
 
-from kontinuum.recipe import load_recipe
+from kinetik.recipe import load_recipe
 
 
 def _repo(tmp_path, verify_yaml: str) -> str:
-    d = tmp_path / ".kontinuum"
+    d = tmp_path / ".kinetik"
     d.mkdir()
     (d / "verify.yaml").write_text(verify_yaml)
     return str(tmp_path)

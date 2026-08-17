@@ -5,10 +5,10 @@ from __future__ import annotations
 import time
 from datetime import datetime, timedelta
 
-from kontinuum.claim import ClaimKind, max_epoch, resolve_owner
-from kontinuum.loop import HOLD_LABEL, LeaseHeartbeat, _issue_list_args, claim_and_run, pr_body
-from kontinuum.pipeline import Proposal
-from kontinuum.protocol import attempt_claim
+from kinetik.claim import ClaimKind, max_epoch, resolve_owner
+from kinetik.loop import HOLD_LABEL, LeaseHeartbeat, _issue_list_args, claim_and_run, pr_body
+from kinetik.pipeline import Proposal
+from kinetik.protocol import attempt_claim
 from tests.fakes import FakeIssueQueue
 
 NOW = datetime(2026, 8, 13, 12, 0, 0)
@@ -73,7 +73,7 @@ def test_reclaim_of_own_issue_does_not_inflate_epoch():
 
 
 def test_poll_once_skips_a_bail_and_works_the_next(monkeypatch):
-    from kontinuum import loop
+    from kinetik import loop
     qs = {1: FakeIssueQueue("r", 1), 2: FakeIssueQueue("r", 2)}
     monkeypatch.setattr(loop, "poll_workable", lambda repo, assignee=None: [1, 2])
     monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: qs[n])
@@ -83,7 +83,7 @@ def test_poll_once_skips_a_bail_and_works_the_next(monkeypatch):
 
 
 def test_poll_once_blocks_only_after_repeated_errors(monkeypatch):
-    from kontinuum import loop
+    from kinetik import loop
     q = FakeIssueQueue("r", 1)
     monkeypatch.setattr(loop, "poll_workable", lambda repo, assignee=None: [1])
     monkeypatch.setattr(loop, "GitHubIssueQueue", lambda repo, n, bot: q)
@@ -110,11 +110,11 @@ def test_heartbeater_refreshes_the_lease():
 
 
 def test_shared_queue_has_no_assignee_filter():
-    assert "--assignee" not in _issue_list_args("owner/repo", "kontinuum:ready", None)
+    assert "--assignee" not in _issue_list_args("owner/repo", "kinetik:ready", None)
 
 
 def test_personal_queue_filters_by_assignee():
-    args = _issue_list_args("owner/repo", "kontinuum:ready", "uros")
+    args = _issue_list_args("owner/repo", "kinetik:ready", "uros")
     assert args[args.index("--assignee") + 1] == "uros"
 
 

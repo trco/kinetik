@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kontinuum.ci import summarize_checks
+from kinetik.ci import summarize_checks
 
 
 def test_no_checks_is_none():

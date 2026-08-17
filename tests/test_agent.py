@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from kontinuum.agent import AgentRunner, ClaudeAgentRunner, ClaudeReviewer, Reviewer
+from kinetik.agent import AgentRunner, ClaudeAgentRunner, ClaudeReviewer, Reviewer
 from tests.fakes import FakeAgentRunner, FakeReviewer
 
 

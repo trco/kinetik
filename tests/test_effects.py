@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from kontinuum.effects import scan_diff
+from kinetik.effects import scan_diff
 
 
 def test_clean_diff_has_no_violations():

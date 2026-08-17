@@ -6,9 +6,9 @@ import os
 import subprocess
 from pathlib import Path
 
-from kontinuum.plugins import available, inject
+from kinetik.plugins import available, inject
 
-SEED = os.path.join(".claude", "skills", "kontinuum-context.md")
+SEED = os.path.join(".claude", "skills", "kinetik-context.md")
 DOCS = os.path.join(".claude", "skills", "living-docs.md")
 
 
@@ -19,7 +19,7 @@ def test_living_docs_is_the_toggleable_plugin():
 def test_inject_lands_the_bundle_and_returns_paths(tmp_path):
     injected = inject(str(tmp_path))
     assert SEED in injected                                   # the bundled seed skill was placed
-    assert (tmp_path / ".claude" / "skills" / "kontinuum-context.md").is_file()
+    assert (tmp_path / ".claude" / "skills" / "kinetik-context.md").is_file()
 
 
 def test_plugin_selection_narrows_what_lands(tmp_path):
@@ -30,7 +30,7 @@ def test_plugin_selection_narrows_what_lands(tmp_path):
 
 
 def test_inject_never_overwrites_repo_native(tmp_path):
-    native = tmp_path / ".claude" / "skills" / "kontinuum-context.md"
+    native = tmp_path / ".claude" / "skills" / "kinetik-context.md"
     native.parent.mkdir(parents=True)
     native.write_text("REPO OWNS THIS")
     injected = inject(str(tmp_path))
