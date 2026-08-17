@@ -4,7 +4,7 @@ Kinetik is a persistent orchestrator you run on your own machine: it polls human
 issues, claims one via an epoch-leased append-only claim log so no other instance double-works it,
 runs a real Claude coding agent whose *commands* are confined to a credential-free, no-network
 sandbox, verifies the result with a fast local gate plus the repo's existing CI, and opens a pull
-request for a human to merge. GitHub issues are the only queue; you keep the merge button.
+request for you to merge when you get back from hugging trees.
 
 ![How Kinetik works](docs/kinetik-overview.svg)
 
